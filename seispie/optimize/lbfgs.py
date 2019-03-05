@@ -1,4 +1,5 @@
 from . base import base
 
 class lbfgs(base):
-	pass
+	def setup(self, config):
+		pass

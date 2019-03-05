@@ -1,4 +1,5 @@
 from . base import base
 
 class default(base):
-	pass
+	def setup(self, base):
+		pass

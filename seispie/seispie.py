@@ -1,7 +1,8 @@
 from os import path, getcwd
 from sys import modules
 from importlib import import_module
-import argparse, configparser
+from argparse import ArgumentParser
+from configparser import ConfigParser
 		
 def setup(workdir, config_file):
 	names = [
@@ -12,17 +13,20 @@ def setup(workdir, config_file):
 		'optimize'
 	]
 
-	config = configparser.ConfigParser()
+	config = ConfigParser()
 	config.read(path.join(workdir, config_file))
-	modules['seispie_config'] = config
 
 	for name in names:
 		module = import_module(name + '.' + config[name][name])
-		modules['seispie_' + name] = getattr(module, config[name][name])
+		module_target = getattr(module, config[name][name])()
+		module_target.setup(config[name])
+		modules['seispie_' + name] = module_target
+
+	modules['seispie_workflow'].main()
 
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
+	parser = ArgumentParser()
 
 	parser.add_argument('--workdir', nargs='?', 
         default=getcwd())

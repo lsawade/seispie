@@ -1,9 +1,6 @@
 class base:
-	def check():
+	def setup(self, config):
 		raise NotImplementedError
 
-	def setup():
-		raise NotImplementedError
-
-	def main():
+	def main(self):
 		raise NotImplementedError

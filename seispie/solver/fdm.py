@@ -1,4 +1,5 @@
 from . base import base
 
 class fdm(base):
-	pass
+	def setup(self, config):
+		pass
