@@ -15,6 +15,10 @@ def setup(workdir, config_file):
 
 	config = ConfigParser()
 	config.read(path.join(workdir, config_file))
+	for key in config['path']:
+		config['path'][key] = path.join(workdir, config['path'][key])
+	
+	modules['seispie_config'] = config
 
 	for name in names:
 		module = import_module(name + '.' + config[name][name])
