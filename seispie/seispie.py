@@ -3,31 +3,35 @@ from sys import modules
 from importlib import import_module
 from argparse import ArgumentParser
 from configparser import ConfigParser
+
+def import_object(section, name):
+	module = import_module(section + '.' + name);
+	return getattr(module, name)()
+
 		
 def setup(workdir, config_file):
-	# FIXME remove sys.modules
-	names = [
-		'workflow',
-		'preprocess',
-		'solver',
-		'postprocess',
-		'optimize'
-	]
+	# assertions
+	config_file = path.join(workdir, config_file)
+	assert path.exists(workdir)
+	assert path.exists(config_file)
 
+	# parse config.ini
 	config = ConfigParser()
-	config.read(path.join(workdir, config_file))
-	for key in config['path']:
-		config['path'][key] = path.join(workdir, config['path'][key])
+	config.read(config_file)
+
+	# create workflow
+	workflow = import_object('workflow', config['workflow']['mode'])
 	
-	modules['seispie_config'] = config
+	# load components
+	for section in workflow.modules:
+		module = import_object(section, config[section]['method'])
+		setattr(workflow, section, module)
+	
+	# initialize
+	workflow.setup(config)
 
-	for name in names:
-		module = import_module(name + '.' + config[name][name])
-		module_target = getattr(module, config[name][name])()
-		module_target.setup(config[name])
-		modules['seispie_' + name] = module_target
-
-	modules['seispie_workflow'].main()
+	# start workflow
+	workflow.run()
 
 
 if __name__ == '__main__':
