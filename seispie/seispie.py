@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 from configparser import ConfigParser
 		
 def setup(workdir, config_file):
+	# FIXME remove sys.modules
 	names = [
 		'workflow',
 		'preprocess',
