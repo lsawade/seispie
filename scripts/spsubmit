@@ -1,0 +1,32 @@
+#!/usr/bin/env python
+
+from seispie.tools.config import get_config
+from subprocess import run
+import os, sys
+
+if __name__ == '__main__':
+	config = get_config()
+	slurm = config['slurm']
+	path = config['directory']
+	output_dir = path['workdir'] + '/' + path['output']
+
+	cmd = 'sbatch '
+
+	if 'args' in slurm:
+		cmd += '%s ' % slurm['args']
+
+	if 'name' in slurm:
+		cmd += '--job-name=%s ' % slurm['name']
+
+	cmd += '--output=%s ' % (output_dir+'/'+'output.log')
+	cmd += '--ntasks-per-node=%s ' % slurm['tasks_per_node']
+	cmd += '--nodes=%s ' % slurm['nodes']
+	cmd += '--time=%s ' % slurm['time']
+
+	dir_path = os.path.dirname(os.path.realpath(__file__))
+	cmd += 'srun ' + dir_path + '/sprun'
+
+	for i in range(1, len(sys.argv)):
+		cmd += ' %s' % sys.argv[i]
+
+	print(cmd)
