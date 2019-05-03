@@ -24,9 +24,9 @@ if __name__ == '__main__':
 	cmd += '--time=%s ' % slurm['time']
 
 	dir_path = os.path.dirname(os.path.realpath(__file__))
-	cmd += 'srun ' + dir_path + '/sprun'
+	cmd += 'spsrun'
 
 	for i in range(1, len(sys.argv)):
 		cmd += ' %s' % sys.argv[i]
 
-	print(cmd)
+	run(cmd, shell=True)
