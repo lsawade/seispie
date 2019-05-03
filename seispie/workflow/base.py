@@ -18,14 +18,15 @@ class base:
 		sys.stdout.write('Hello world')
 
 	def call_mpi(self):
-		from mpi4py import MPI
+		if not hasattr(self, 'mpi'):
+			from seispie.tools.mpi import MPI
+			self.mpi = MPI()
 
-		size = MPI.COMM_WORLD.Get_size()
-		rank = MPI.COMM_WORLD.Get_rank()
-		name = MPI.Get_processor_name()
+		rank = self.mpi.rank()
+		size = self.mpi.size()
 
-		msg = "Hello World! I am process {0} of {1} on {2}.\n"
-		sys.stdout.write(msg.format(rank, size, name))
+		msg = "Hello World! I am process {0} of {1}.\n"
+		sys.stdout.write(msg.format(rank, size))
 
 	@property
 	def modules(self):

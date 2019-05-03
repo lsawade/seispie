@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+
+from seispie.tools.config import get_config
+from subprocess import check_call
+
+if __name__ == '__main__':
+	config = get_config()
+	slurm = config['slurm']
+	path = config['path']
+	output_dir = path['workdir'] + '/' + path['output']
+
+	cmd = 'sbatch '
+
+	if 'args' in slurm:
+		cmd += '%s ' % slurm['args']
+
+	if 'title' in slurm:
+		cmd += '--job-name=%s ' % slurrm['name']
+
+	cmd += '--output %s ' % (output_dir+'/'+'output.log')
+	cmd += '--ntasks-per-node=%d ' % slurm['tasks_per_node']
+	cmd += '--nodes=%d ' % slurm['nodes']
+	cmd += '--time=%d ' % slurm['time']
+	cmd += 'sprun'
