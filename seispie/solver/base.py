@@ -5,13 +5,13 @@ class base:
 	def setup(self, config):
 		raise NotImplementedError
 
-	def runForward(self):
+	def run_forward(self):
 		raise NotImplementedError
 
-	def runAdjoint(self):
+	def run_adjoint(self):
 		raise NotImplementedError
 
-	def importModel(self, dir):
+	def import_model(self, dir):
 		names = ['vp', 'vs', 'rho', 'x', 'z']
 
 		for name in names:

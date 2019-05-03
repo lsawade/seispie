@@ -7,12 +7,11 @@ class forward(base):
 	def setup(self, config):
 		""" initialize
 		"""
-		print(self.solver)
-
+	
 	def run(self):
 		""" start workflow
 		"""
-		print('run')
+		self.call_mpi()
 
 	@property
 	def modules(self):
