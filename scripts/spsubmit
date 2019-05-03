@@ -18,7 +18,10 @@ if __name__ == '__main__':
 	cmd += '#SBATCH --ntasks-per-node=%s\n' % slurm['tasks_per_node']
 	cmd += '#SBATCH --nodes=%s\n' % slurm['nodes']
 	cmd += '#SBATCH --time=%s\n' % slurm['time']
-	cmd += 'cd .. && srun ' + os.path.dirname(os.path.realpath(__file__)) + '/sprun'
+	cmd += 'srun ' + os.path.dirname(os.path.realpath(__file__)) + '/sprun'
+
+	for i in range(1, len(sys.argv)):
+		cmd += ' ' + sys.argv[i]
 
 	slurm_file = outdir + '/job.bash'
 	with open(slurm_file, 'w') as f:
