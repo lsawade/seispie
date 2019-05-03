@@ -1,11 +1,11 @@
-from mpi4py import MPI
+from mpi4py import MPI as _MPI
 
 class MPI:
 	def call(self):
 		pass
 
 	def rank(self):
-		return MPI.COMM_WORLD.Get_rank()
+		return _MPI.COMM_WORLD.Get_rank()
 
 	def size(self):
-		return MPI.COMM_WORLD.Get_size()
+		return _MPI.COMM_WORLD.Get_size()

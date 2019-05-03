@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
 from seispie.tools.config import get_config
-from subprocess import check_call
+from subprocess import run
+import sys
 
 if __name__ == '__main__':
 	config = get_config()
 	slurm = config['slurm']
-	path = config['path']
+	path = config['directory']
 	output_dir = path['workdir'] + '/' + path['output']
 
 	cmd = 'sbatch '
@@ -14,11 +15,16 @@ if __name__ == '__main__':
 	if 'args' in slurm:
 		cmd += '%s ' % slurm['args']
 
-	if 'title' in slurm:
-		cmd += '--job-name=%s ' % slurrm['name']
+	if 'name' in slurm:
+		cmd += '--job-name=%s ' % slurm['name']
 
-	cmd += '--output %s ' % (output_dir+'/'+'output.log')
-	cmd += '--ntasks-per-node=%d ' % slurm['tasks_per_node']
-	cmd += '--nodes=%d ' % slurm['nodes']
-	cmd += '--time=%d ' % slurm['time']
+	cmd += '--output=%s ' % (output_dir+'/'+'output.log')
+	cmd += '--ntasks-per-node=%s ' % slurm['tasks_per_node']
+	cmd += '--nodes=%s ' % slurm['nodes']
+	cmd += '--time=%s ' % slurm['time']
 	cmd += 'sprun'
+
+	for i in range(1, len(sys.argv)):
+		cmd += ' %s' % sys.argv[i]
+
+	print(cmd)
