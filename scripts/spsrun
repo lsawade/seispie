@@ -5,13 +5,9 @@ from subprocess import call
 
 if __name__ == '__main__':
 
-	dir_path = 
-
-	cmd = 'srun python ' + sys.argv[1] + '/srun'
+	cmd = 'srun python ' + sys.argv[1] + '/sprun'
 
 	for i in range(2, len(sys.argv)):
 		cmd += ' ' + sys.argv[i]
 
-	# call(cmd, shell=True)
-	print(cmd)
-
+	call(cmd, shell=True)
