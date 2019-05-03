@@ -23,8 +23,6 @@ def get_config():
 	# ensure output directory exists
 	outdir = path.join(workdir, config['directory']['output'])
 	if not path.exists(outdir):
-		print('created directory', outdir)
 		makedirs(outdir)
-
 
 	return config
