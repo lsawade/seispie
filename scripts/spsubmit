@@ -1,26 +1,30 @@
 #!/usr/bin/env python
 
-from seispie.tools.config import get_config
 from subprocess import call
+from importlib.machinery import SourceFileLoader
 import os, sys
 
 if __name__ == '__main__':
+	cwd = os.path.dirname(os.path.realpath(__file__))
+	sprun = SourceFileLoader('get_config', cwd + '/sprun').load_module()
+	get_config = getattr(sprun, 'get_config')
+
 	config = get_config()
-	slurm = config['slurm']
+	system = config['system']
 	path = config['directory']
 
 	workdir = path['workdir']
 	outdir = workdir + '/' + path['output']
 
 	cmd = '#!/bin/bash\n'
-	cmd += '#SBATCH --job-name=%s\n' % slurm['name']
+	cmd += '#SBATCH --job-name=%s\n' % system['name']
 	cmd += '#SBATCH --output=%s\n' % (outdir+'/'+'output.log')
-	cmd += '#SBATCH --ntasks-per-node=%s\n' % slurm['tasks_per_node']
-	cmd += '#SBATCH --nodes=%s\n' % slurm['nodes']
-	cmd += '#SBATCH --time=%s\n' % slurm['time']
+	cmd += '#SBATCH --ntasks-per-node=%s\n' % system['tasks_per_node']
+	cmd += '#SBATCH --nodes=%s\n' % system['nodes']
+	cmd += '#SBATCH --time=%s\n' % system['time']
 
-	cmd += 'module load %s \n' % slurm['modules']
-	cmd += 'srun python ' + os.path.dirname(os.path.realpath(__file__)) + '/sprun'
+	cmd += 'module load %s \n' % system['modules']
+	cmd += 'srun python ' + cwd + '/sprun'
 
 	for i in range(1, len(sys.argv)):
 		cmd += ' ' + sys.argv[i]
