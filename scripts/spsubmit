@@ -8,23 +8,20 @@ if __name__ == '__main__':
 	config = get_config()
 	slurm = config['slurm']
 	path = config['directory']
-	output_dir = path['workdir'] + '/' + path['output']
 
-	cmd = 'sbatch '
+	workdir = path['workdir']
+	outdir = workdir + '/' + path['output']
 
-	if 'args' in slurm:
-		cmd += '%s ' % slurm['args']
+	cmd = '#!/bin/bash\n'
+	cmd += '#SBATCH --job-name=%s\n' % slurm['name']
+	cmd += '#SBATCH --output=%s\n' % (outdir+'/'+'output.log')
+	cmd += '#SBATCH --ntasks-per-node=%s\n' % slurm['tasks_per_node']
+	cmd += '#SBATCH --nodes=%s\n' % slurm['nodes']
+	cmd += '#SBATCH --time=%s\n' % slurm['time']
+	cmd += 'cd .. && srun ' + os.path.dirname(os.path.realpath(__file__)) + '/sprun'
 
-	if 'name' in slurm:
-		cmd += '--job-name=%s ' % slurm['name']
+	slurm_file = outdir + '/job.bash'
+	with open(slurm_file, 'w') as f:
+		f.write(cmd)
 
-	cmd += '--output=%s ' % (output_dir+'/'+'output.log')
-	cmd += '--ntasks-per-node=%s ' % slurm['tasks_per_node']
-	cmd += '--nodes=%s ' % slurm['nodes']
-	cmd += '--time=%s ' % slurm['time']
-	cmd += 'spsrun ' + os.path.dirname(os.path.realpath(__file__))
-
-	for i in range(1, len(sys.argv)):
-		cmd += ' %s' % sys.argv[i]
-
-	call(cmd, shell=True)
+	call('sbatch ' + slurm_file, shell=True)
