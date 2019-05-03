@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+
+import os
+from subprocess import call
+
+if __name__ == '__main__':
+
+	dir_path = os.path.dirname(os.path.realpath(__file__))
+
+	cmd = 'srun python ' + dir_path + '/srun'
+
+	call(cmd, shell=True)
+
