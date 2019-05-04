@@ -42,6 +42,11 @@ def setup(config):
 	# create workflow
 	workflow = import_object('workflow', config['workflow']['mode'])
 	workflow.setup(config['workflow'])
+	
+	# system
+	system = import_module('seispie.workflow.system.' + config['workflow']['system'])
+	for method in ['call']:
+		setattr(workflow, method, getattr(system, method))
 
 	# load components
 	for section in workflow.modules:

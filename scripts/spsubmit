@@ -5,32 +5,38 @@ from importlib.machinery import SourceFileLoader
 import os, sys
 
 if __name__ == '__main__':
+	# parse config.ini
 	cwd = os.path.dirname(os.path.realpath(__file__))
 	sprun = SourceFileLoader('get_config', cwd + '/sprun').load_module()
 	get_config = getattr(sprun, 'get_config')
-
 	config = get_config()
-	system = config['system']
-	path = config['directory']
 
+	# directory
+	slurm = config['slurm']
+	path = config['directory']
 	workdir = path['workdir']
 	outdir = workdir + '/' + path['output']
 
+	# slurm commands
 	cmd = '#!/bin/bash\n'
-	cmd += '#SBATCH --job-name=%s\n' % system['name']
+	cmd += '#SBATCH --job-name=%s\n' % slurm['name']
 	cmd += '#SBATCH --output=%s\n' % (outdir+'/'+'output.log')
-	cmd += '#SBATCH --ntasks-per-node=%s\n' % system['tasks_per_node']
-	cmd += '#SBATCH --nodes=%s\n' % system['nodes']
-	cmd += '#SBATCH --time=%s\n' % system['time']
+	cmd += '#SBATCH --ntasks-per-node=%s\n' % slurm['tasks_per_node']
+	cmd += '#SBATCH --nodes=%s\n' % slurm['nodes']
+	cmd += '#SBATCH --time=%s\n' % slurm['time']
 
-	cmd += 'module load %s \n' % system['modules']
+	# load modules and run
+	cmd += 'module load %s \n' % slurm['modules']
 	cmd += 'srun python ' + cwd + '/sprun'
 
+	# add arguments to submission script
 	for i in range(1, len(sys.argv)):
 		cmd += ' ' + sys.argv[i]
 
+	# write to bash file
 	slurm_file = outdir + '/job.bash'
 	with open(slurm_file, 'w') as f:
 		f.write(cmd)
 
+	# submit bash file
 	call('sbatch ' + slurm_file, shell=True)

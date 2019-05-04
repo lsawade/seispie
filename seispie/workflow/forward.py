@@ -7,11 +7,12 @@ class forward(base):
 	def setup(self, config):
 		""" initialize
 		"""
+		self.niter = config['niter']
 	
 	def run(self):
 		""" start workflow
 		"""
-		self.call_mpi()
+		self.call()
 
 	@property
 	def modules(self):
