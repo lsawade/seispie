@@ -1,4 +1,4 @@
-from . base import base
+from seispie.workflow.base import base
 
 class inversion:
 	def setup(self, config):

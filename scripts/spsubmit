@@ -9,12 +9,11 @@ if __name__ == '__main__':
 	cwd = os.path.dirname(os.path.realpath(__file__))
 	sprun = SourceFileLoader('get_config', cwd + '/sprun').load_module()
 	get_config = getattr(sprun, 'get_config')
-	config = get_config()
+	config, workdir = get_config()
 
 	# directory
 	slurm = config['slurm']
 	path = config['directory']
-	workdir = path['workdir']
 	outdir = workdir + '/' + path['output']
 
 	# slurm commands
@@ -25,6 +24,10 @@ if __name__ == '__main__':
 	cmd += '#SBATCH --nodes=%s\n' % slurm['nodes']
 	cmd += '#SBATCH --time=%s\n' % slurm['time']
 
+	# custom command
+	if 'command' in slurm:
+		cmd += slurm['command'] + '\n'
+
 	# load modules and run
 	cmd += 'module load %s \n' % slurm['modules']
 	cmd += 'srun python ' + cwd + '/sprun'
@@ -32,6 +35,8 @@ if __name__ == '__main__':
 	# add arguments to submission script
 	for i in range(1, len(sys.argv)):
 		cmd += ' ' + sys.argv[i]
+
+	cmd += '\n'
 
 	# write to bash file
 	slurm_file = outdir + '/job.bash'

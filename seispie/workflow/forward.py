@@ -1,4 +1,4 @@
-from . base import base
+from seispie.workflow.base import base
 
 class forward(base):
 	""" forward simulation
@@ -7,12 +7,13 @@ class forward(base):
 	def setup(self, config):
 		""" initialize
 		"""
-		self.niter = config['niter']
+		pass
 	
 	def run(self):
 		""" start workflow
 		"""
-		self.call()
+		self.call('solver', 'import_model', self.path['model_true'])
+		self.call('solver', 'run_forward')
 
 	@property
 	def modules(self):

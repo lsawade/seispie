@@ -1,7 +1,9 @@
 from sys import modules
+from os import path
+
 import numpy as np
 
-from . base import base
+from seispie.solver.base import base
 
 class fdm(base):
 	def setup(self, config):
@@ -30,20 +32,58 @@ class fdm(base):
 		else:
 			self.save_snapshot = 0
 
+		if 'combine_sources' in config:
+			self.combine_sources = config['combine_sources']
+		else:
+			self.combine_sources = 'no'
+
+		if 'interpolate_model' in config:
+			self.interpolate_model = config['interpolate_model']
+		else:
+			self.interpolate_model = 0
+
 		assert self.sh == 'yes' or self.psv == 'yes'
 		assert 'nt' in config
 		assert 'dt' in config
 		
 		self.nt = config['nt']
 		self.dt = config['dt']
+		
+	def import_model(self, dir):
+		""" import model
+		"""
+
 		self.model = dict()
 		
-	def importModel(self, dir):
-		super().importModel(dir)
-		print(self.model['z'][0:10])
+		for name in ['x', 'z', 'vp', 'vs', 'rho']:
+			filename = path.join(dir, 'proc000000_' + name + '.bin')
+			with open(filename) as f:
+				f.seek(0)
+				self.npt = np.fromfile(f, dtype='int32', count=1)[0]
+
+				f.seek(4)
+				self.model[name] = np.fromfile(f, dtype='float32')
+
+		x = self.model['x']
+		z = self.model['z']
+		lx = x.max() - x.min()
+		lz = z.max() - z.min()
+		self.nx = int(np.rint(np.sqrt(self.npt * lx / lz)))
+		self.nz = int(np.rint(np.sqrt(self.npt * lz / lx)))
+		self.dx = lx / (self.nx - 1)
+		self.dz = lz / (self.nz - 1)
+
+		for i in range(self.nx):
+			for j in range(self.nz):
+				idx = i*self.nz + j
+				if (x[idx]-i*self.dx) != 0:
+					print(i,j)
+
+				if (z[idx]-j*self.dz) != 0:
+					print(i,j)
 
 
-	def runForward(self):
+	def run_forward(self):
 		pass
 		
 

@@ -14,7 +14,7 @@ def get_config():
 	parser.add_argument('--config_file', nargs='?', default='config.ini')
 	args = parser.parse_args()
 
-	# assertions
+	# assert path exists
 	workdir = args.workdir
 	config_file = path.join(workdir, args.config_file)
 	assert path.exists(workdir)
@@ -23,34 +23,37 @@ def get_config():
 	# parse config.ini
 	config = ConfigParser()
 	config.read(config_file)
-	config['directory']['workdir'] = workdir
 
 	# ensure output directory exists
-	outdir = path.join(workdir, config['directory']['output'])
+	outdir = path.join(workdir, config['path']['output'])
 	if not path.exists(outdir):
 		makedirs(outdir)
 
-	return config
-
-
-def import_object(section, name):
-	module = import_module('seispie.' + section + '.' + name);
-	return getattr(module, name)()
+	return config, workdir
 
 		
-def setup(config):
-	# create workflow
-	workflow = import_object('workflow', config['workflow']['mode'])
-	workflow.setup(config['workflow'])
-	
-	# system
+def setup(config, workdir):
+	# system setup
+	mode = config['workflow']['mode']
+	Workflow = getattr(import_module('seispie.workflow.' + mode), mode);
 	system = import_module('seispie.workflow.system.' + config['workflow']['system'])
 	for method in ['call']:
-		setattr(workflow, method, getattr(system, method))
+		setattr(Workflow, method, getattr(system, method))
+
+	# create workflow
+	workflow = Workflow()
+	workflow.setup(config['workflow'])
+
+	# set path
+	workflow.path = dict()
+	for dir in config['path']:
+		if config['path'][dir] != 'no':
+			workflow.path[dir] = path.join(workdir, config['path'][dir])
 
 	# load components
 	for section in workflow.modules:
-		module = import_object(section, config[section]['method'])
+		method = config[section]['method']
+		module = getattr(import_module('seispie.' + section + '.' + method), method)()
 		module.setup(config[section])
 		setattr(workflow, section, module)
 
@@ -59,4 +62,4 @@ def setup(config):
 
 
 if __name__ == '__main__':
-	setup(get_config())
+	setup(*get_config())
