@@ -13,7 +13,7 @@ if __name__ == '__main__':
 
 	# directory
 	slurm = config['slurm']
-	path = config['directory']
+	path = config['path']
 	outdir = workdir + '/' + path['output']
 
 	# slurm commands
@@ -23,6 +23,7 @@ if __name__ == '__main__':
 	cmd += '#SBATCH --ntasks-per-node=%s\n' % slurm['tasks_per_node']
 	cmd += '#SBATCH --nodes=%s\n' % slurm['nodes']
 	cmd += '#SBATCH --time=%s\n' % slurm['time']
+	cmd += '#SBATCH --gres=gpu:1\n'
 
 	# custom command
 	if 'command' in slurm:

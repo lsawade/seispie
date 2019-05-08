@@ -1,89 +1,174 @@
-from sys import modules
-from os import path
-
 import numpy as np
+import math
+
+from os import path
+from numba import cuda
 
 from seispie.solver.base import base
+from seispie.solver.source.ricker import ricker
+
+@cuda.jit(device=True)
+def idx():
+	tx = cuda.threadIdx.x
+	ty = cuda.blockIdx.x
+	bw = cuda.blockDim.x
+	pos = tx + ty * bw
+	return pos
+
+@cuda.jit
+def vps2lm(lam, mu, rho):
+	pos = idx()
+	if pos < lam.size:
+		vp = lam[pos]
+		vs = mu[pos]
+
+		if vp > vs:
+			lam[pos] = rho[pos] * (vp * vp - 2 * vs * vs)
+		else:
+			lam[pos] = 0
+
+		mu[pos] = rho[pos] * vs * vs
+
+@cuda.jit
+def lm2vps(vp, vs, rho):
+	pos = idx()
+	if pos < vp.size:
+		lam = vp[pos]
+		mu = vs[pos]
+
+		vp[pos] = math.sqrt((lam + 2 * mu) / rho[pos])
+		vs[pos] = math.sqrt(mu / rho[pos])
 
 class fdm(base):
 	def setup(self, config):
-		if 'sh' in config:
-			self.sh = config['sh']
-		else:
-			self.sh = 'no'
+		# FIXME validate config
+		self.config = config
+		self.stream = cuda.stream()
 
-		if 'psv' in config:
-			self.psv = config['psv']
-		else:
-			self.psv = 'no'
+		self.nt = int(config['nt'])
+		self.dt = float(config['dt'])
 
-		if 'save_velocity' in config:
-			self.save_velocity = config['save_velocity']
-		else:
-			self.save_velocity = 'no'
+	def import_sources(self, dir):
+		src = np.loadtxt(dir)
+		nsrc = self.nsrc = src.shape[0]
 
-		if 'save_displacement' in config:
-			self.save_displacement = config['save_displacement']
-		else:
-			self.save_displacement = 'no'
+		src_x = np.zeros(nsrc)
+		src_z = np.zeros(nsrc)
 
-		if 'save_snapshot' in config:
-			self.save_snapshot = config['save_snapshot']
-		else:
-			self.save_snapshot = 0
+		stf_x = np.zeros(nsrc * self.nt)
+		stf_y = np.zeros(nsrc * self.nt)
+		stf_z = np.zeros(nsrc * self.nt)
 
-		if 'combine_sources' in config:
-			self.combine_sources = config['combine_sources']
-		else:
-			self.combine_sources = 'no'
+		for isrc in range(nsrc):
+			src_x[isrc] = int(np.round(src[isrc][0] / self.dx))
+			src_z[isrc] = int(np.round(src[isrc][1] / self.dz))
 
-		if 'interpolate_model' in config:
-			self.interpolate_model = config['interpolate_model']
-		else:
-			self.interpolate_model = 0
+			for it in range(0, self.nt):
+				istf = isrc * self.nt + it
 
-		assert self.sh == 'yes' or self.psv == 'yes'
-		assert 'nt' in config
-		assert 'dt' in config
-		
-		self.nt = config['nt']
-		self.dt = config['dt']
+				# FIXME source time function
+				stf_x[istf], stf_y[istf], stf_z[istf] = ricker(it * self.dt, *src[isrc][3:])
+
+		# allocate array
+		stream = self.stream
+
+		self.src_x = cuda.to_device(src_x, stream=stream)
+		self.src_z = cuda.to_device(src_z, stream=stream)
+
+		self.stf_x = cuda.to_device(stf_x, stream=stream)
+		self.stf_y = cuda.to_device(stf_y, stream=stream)
+		self.stf_z = cuda.to_device(stf_z, stream=stream)
+
+	def import_stations(self, dir):
+		rec = np.loadtxt(dir)
+		nrec = self.nrec = rec.shape[0]
+
+		rec_x = np.zeros(nrec)
+		rec_z = np.zeros(nrec)
+
+		for irec in range(nrec):
+			rec_x[irec] = int(np.round(rec[irec][0] / self.dx))
+			rec_z[irec] = int(np.round(rec[irec][1] / self.dz))
+
+		self.rec_x = cuda.to_device(rec_x, stream=stream)
+		self.rec_z = cuda.to_device(rec_z, stream=stream)
 		
 	def import_model(self, dir):
 		""" import model
 		"""
-
-		self.model = dict()
+		model = self.imported_model = dict()
 		
 		for name in ['x', 'z', 'vp', 'vs', 'rho']:
 			filename = path.join(dir, 'proc000000_' + name + '.bin')
 			with open(filename) as f:
 				f.seek(0)
-				self.npt = np.fromfile(f, dtype='int32', count=1)[0]
+				npt = np.fromfile(f, dtype='int32', count=1)[0]
 
 				f.seek(4)
-				self.model[name] = np.fromfile(f, dtype='float32')
+				model[name] = np.fromfile(f, dtype='float32').astype('float64')
 
-		x = self.model['x']
-		z = self.model['z']
+		ntpb = int(self.config['threads_per_block'])
+		nb = int(np.ceil(npt / ntpb))
+		self.dim = nb, ntpb
+
+		x = model['x']
+		z = model['z']
 		lx = x.max() - x.min()
 		lz = z.max() - z.min()
-		self.nx = int(np.rint(np.sqrt(self.npt * lx / lz)))
-		self.nz = int(np.rint(np.sqrt(self.npt * lz / lx)))
-		self.dx = lx / (self.nx - 1)
-		self.dz = lz / (self.nz - 1)
+		nx = self.nx = int(np.rint(np.sqrt(npt * lx / lz)))
+		nz = self.nz = int(np.rint(np.sqrt(npt * lz / lx)))
+		dx = self.dx = lx / (nx - 1)
+		dz = self.dz = lz / (nz - 1)
 
-		for i in range(self.nx):
-			for j in range(self.nz):
-				idx = i*self.nz + j
-				if (x[idx]-i*self.dx) != 0:
-					print(i,j)
+		# allocate array
+		stream = self.stream
+		zeros = np.zeros(npt)
 
-				if (z[idx]-j*self.dz) != 0:
-					print(i,j)
+		self.lam = cuda.to_device(model['vp'], stream=stream)
+		self.mu = cuda.to_device(model['vs'], stream=stream)
+		self.rho = cuda.to_device(model['rho'], stream=stream)
+		self.abs = cuda.to_device(zeros, stream=stream) # absorbing boundary
+		
+		if self.config['sh'] == 'yes':
+			self.vy = cuda.to_device(zeros, stream=stream)
+			self.uy = cuda.to_device(zeros, stream=stream)
+			self.sxy = cuda.to_device(zeros, stream=stream)
+			self.szy = cuda.to_device(zeros, stream=stream)
+			self.dsy = cuda.to_device(zeros, stream=stream)
+			self.dvydx = cuda.to_device(zeros, stream=stream)
+			self.dvydz = cuda.to_device(zeros, stream=stream)
 
+		if self.config['psv'] == 'yes':
+			self.vx = cuda.to_device(zeros, stream=stream)
+			self.vz = cuda.to_device(zeros, stream=stream)
+			self.ux = cuda.to_device(zeros, stream=stream)
+			self.uz = cuda.to_device(zeros, stream=stream)
+			self.sxx = cuda.to_device(zeros, stream=stream)
+			self.szz = cuda.to_device(zeros, stream=stream)
+			self.sxz = cuda.to_device(zeros, stream=stream)
+			self.dsx = cuda.to_device(zeros, stream=stream)
+			self.dsz = cuda.to_device(zeros, stream=stream)
+			self.dvxdx = cuda.to_device(zeros, stream=stream)
+			self.dvxdz = cuda.to_device(zeros, stream=stream)
+			self.dvzdx = cuda.to_device(zeros, stream=stream)
+			self.dvzdz = cuda.to_device(zeros, stream=stream)
+
+		# FIXME interpolate model
+
+		# change parameterization
+		vps2lm[self.dim](self.lam, self.mu, self.rho)
+
+		# FIXME remove below
+		# lm2vps[self.dim](self.lam, self.mu, self.rho)
+		# t = np.zeros(npt)
+		# self.mu.copy_to_host(t, stream=stream)
+		# stream.synchronize()
+		# print('valalaah', t[0])
 
 	def run_forward(self):
 		pass
+		# stream = self.stream
+
+		# div_stress[nsrc, 1]
 		
 

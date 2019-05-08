@@ -13,6 +13,8 @@ class forward(base):
 		""" start workflow
 		"""
 		self.call('solver', 'import_model', self.path['model_true'])
+		self.call('solver', 'import_sources', self.path['sources'])
+		self.call('solver', 'import_stations', self.path['stations'])
 		self.call('solver', 'run_forward')
 
 	@property
