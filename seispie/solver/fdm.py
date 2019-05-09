@@ -85,6 +85,9 @@ class fdm(base):
 
 		rec_x = np.zeros(nrec)
 		rec_z = np.zeros(nrec)
+		
+		# allocate array
+		stream = self.stream
 
 		for irec in range(nrec):
 			rec_x[irec] = int(np.round(rec[irec][0] / self.dx))
@@ -159,11 +162,11 @@ class fdm(base):
 		vps2lm[self.dim](self.lam, self.mu, self.rho)
 
 		# FIXME remove below
-		# lm2vps[self.dim](self.lam, self.mu, self.rho)
-		# t = np.zeros(npt)
-		# self.mu.copy_to_host(t, stream=stream)
-		# stream.synchronize()
-		# print('valalaah', t[0])
+		lm2vps[self.dim](self.lam, self.mu, self.rho)
+		t = np.zeros(npt)
+		self.mu.copy_to_host(t, stream=stream)
+		stream.synchronize()
+		print('valalaah', t[0])
 
 	def run_forward(self):
 		pass
