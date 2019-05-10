@@ -47,11 +47,6 @@ def lm2vps(vp, vs, rho):
 		vs[k] = math.sqrt(mu / rho[k])
 
 @cuda.jit
-def div_sy(mu, nz):
-	k, i, j = idxij(nz)
-	mu[k] = i + j
-
-@cuda.jit
 def div_sy(dsy, sxy, szy, dx, dz, nx, nz):
 	k, i, j = idxij(nz)
 	if k < dsy.size:
@@ -66,10 +61,10 @@ def div_sy(dsy, sxy, szy, dx, dz, nx, nz):
 @cuda.jit
 def div_sxz(dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz):
 	k, i, j = idxij(nz)
-	if k < dsy.size:
+	if k < dsx.size:
 		if i >= 2 and i < nx - 2:
-			dsx[k] = 9 * (sxx[k] - sxx[k-nz]) / (8 * dx) - (sxx[k+nz] - sxx[dim(k-2*nz)]) / (24 * dx);
-			dsz[k] = 9 * (sxz[k] - sxz[k-nz]) / (8 * dx) - (sxz[k+nz] - sxz[dim(k-2*nz)]) / (24 * dx);
+			dsx[k] = 9 * (sxx[k] - sxx[k-nz]) / (8 * dx) - (sxx[k+nz] - sxx[k-2*nz]) / (24 * dx)
+			dsz[k] = 9 * (sxz[k] - sxz[k-nz]) / (8 * dx) - (sxz[k+nz] - sxz[k-2*nz]) / (24 * dx)
 		else:
 			dsx[k] = 0;
 			dsz[k] = 0;
@@ -246,6 +241,7 @@ class fdm(base):
 		dsz = self.dsz
 		sxx = self.sxx
 		szz = self.szz
+		sxz = self.sxz
 		sxy = self.sxy
 		szy = self.szy
 
