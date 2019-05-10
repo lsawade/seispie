@@ -47,6 +47,29 @@ def lm2vps(vp, vs, rho):
 		vs[k] = math.sqrt(mu / rho[k])
 
 @cuda.jit
+def set_bound(bound, width, alpha, left, right, bottom, top, nx, nz):
+	k, i, j = idxij(nz)
+	if k < bound.size:
+		bound[k] = 1;
+
+		if left and i + 1 < width:
+			aw = alpha * (width - i - 1)
+			bound[k] *= math.exp(-aw * aw)
+
+
+		if right and i > nx - width:
+			aw = alpha * (width + i - nx)
+			bound[k] *= math.exp(-aw * aw)
+
+		if bottom and j > nz - width:
+			aw = alpha * (width + j - nz)
+			bound[k] *= math.exp(-aw * aw)
+
+		if top and j + 1 < width:
+			aw = alpha * (width - j - 1)
+			bound[k] *= math.exp(-aw * aw)
+
+@cuda.jit
 def div_sy(dsy, sxy, szy, dx, dz, nx, nz):
 	k, i, j = idxij(nz)
 	if k < dsy.size:
@@ -66,12 +89,36 @@ def div_sxz(dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz):
 			dsx[k] = 9 * (sxx[k] - sxx[k-nz]) / (8 * dx) - (sxx[k+nz] - sxx[k-2*nz]) / (24 * dx)
 			dsz[k] = 9 * (sxz[k] - sxz[k-nz]) / (8 * dx) - (sxz[k+nz] - sxz[k-2*nz]) / (24 * dx)
 		else:
-			dsx[k] = 0;
-			dsz[k] = 0;
-		
+			dsx[k] = 0
+			dsz[k] = 0
+
 		if j >= 2 and j < nz - 2:
 			dsx[k] += 9 * (sxz[k] - sxz[k-1]) / (8 * dz) - (sxz[k+1] - sxz[k-2]) / (24 * dz)
 			dsz[k] += 9 * (szz[k] - szz[k-1]) / (8 * dz) - (szz[k+1] - szz[k-2]) / (24 * dz)
+
+@cuda.jit
+def add_dsy(dsy, stf_y, src_x, src_z, isrc, it, nt, nz):
+	ib = cuda.blockIdx.x
+	xs = src_x[ib]
+	zs = src_z[ib]
+
+	if isrc < 0 or isrc == ib:
+		ks = ib * nt + it
+		km = xs * nz + zs
+		dsy[km] += stf_y[ks]
+
+@cuda.jit
+def add_dsxz(dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz):
+	ib = cuda.blockIdx.x
+	xs = src_x[ib]
+	zs = src_z[ib]
+
+	if isrc < 0 or isrc == ib:
+		ks = ib * nt + it
+		km = xs * nz + zs
+		dsx[km] += stf_x[ks]
+		dsz[km] += stf_z[ks]
+
 
 class fdm(base):
 	def setup(self):
@@ -81,11 +128,11 @@ class fdm(base):
 		self.dt = float(self.config['dt'])
 
 	def import_sources(self, dir):
-		src = np.loadtxt(dir)
+		src = np.loadtxt(dir, ndmin=2)
 		nsrc = self.nsrc = src.shape[0]
 
-		src_x = np.zeros(nsrc)
-		src_z = np.zeros(nsrc)
+		src_x = np.zeros(nsrc, dtype='int32')
+		src_z = np.zeros(nsrc, dtype='int32')
 
 		stf_x = np.zeros(nsrc * self.nt)
 		stf_y = np.zeros(nsrc * self.nt)
@@ -97,8 +144,6 @@ class fdm(base):
 
 			for it in range(0, self.nt):
 				istf = isrc * self.nt + it
-
-				# FIXME source time function
 				stf_x[istf], stf_y[istf], stf_z[istf] = ricker(it * self.dt, *src[isrc][3:])
 
 		# allocate array
@@ -115,9 +160,9 @@ class fdm(base):
 		rec = np.loadtxt(dir)
 		nrec = self.nrec = rec.shape[0]
 
-		rec_x = np.zeros(nrec)
-		rec_z = np.zeros(nrec)
-		
+		rec_x = np.zeros(nrec, dtype='int32')
+		rec_z = np.zeros(nrec, dtype='int32')
+
 		# allocate array
 		stream = self.stream
 
@@ -127,12 +172,12 @@ class fdm(base):
 
 		self.rec_x = cuda.to_device(rec_x, stream=stream)
 		self.rec_z = cuda.to_device(rec_z, stream=stream)
-		
+
 	def import_model(self, dir):
 		""" import model
 		"""
 		model = self.imported_model = dict()
-		
+
 		for name in ['x', 'z', 'vp', 'vs', 'rho']:
 			filename = path.join(dir, 'proc000000_' + name + '.bin')
 			with open(filename) as f:
@@ -157,18 +202,6 @@ class fdm(base):
 		dx = self.dx = lx / (nx - 1)
 		dz = self.dz = lz / (nz - 1)
 
-
-		for i in range(nx):
-			for j in range(nz):
-				pos = i * nz + j
-				if x[pos] != i * dx:
-					print(x[pos], i*dx)
-				
-				if z[pos] != j * dz:
-					print(z[pos], j*dz)
-
-		print('verified')
-
 		# allocate array
 		stream = self.stream
 		zeros = np.zeros(npt)
@@ -176,7 +209,17 @@ class fdm(base):
 		self.lam = cuda.to_device(model['vp'], stream=stream)
 		self.mu = cuda.to_device(model['vs'], stream=stream)
 		self.rho = cuda.to_device(model['rho'], stream=stream)
-		self.abs = cuda.to_device(zeros, stream=stream) # absorbing boundary
+		self.bound = cuda.to_device(zeros, stream=stream) # absorbing boundary
+
+		abs_left = 1 if self.config['abs_left'] == 'yes' else 0
+		abs_right = 1 if self.config['abs_right'] == 'yes' else 0
+		abs_top = 1 if self.config['abs_top'] == 'yes' else 0
+		abs_bottom = 1 if self.config['abs_bottom'] == 'yes' else 0
+
+		set_bound[self.dim](
+			self.bound, int(self.config['abs_width']), float(self.config['abs_alpha']),
+			abs_left, abs_right, abs_bottom, abs_top, nx, nz
+		);
 		
 		if self.config['sh'] == 'yes':
 			self.vy = cuda.to_device(zeros, stream=stream)
@@ -206,12 +249,11 @@ class fdm(base):
 
 		# change parameterization
 		vps2lm[self.dim](self.lam, self.mu, self.rho)
-
+		
 		# # FIXME remove below
 		# lm2vps[self.dim](self.lam, self.mu, self.rho)
 		# t = np.zeros(npt)
-		# div_sy[self.dim](self.mu, self.nz)
-		# self.mu.copy_to_host(t, stream=stream)
+		# self.bound.copy_to_host(t, stream=stream)
 		# stream.synchronize()
 		# self.export_field(t, 'vq')
 		# print('valalaah', t[0])
@@ -245,12 +287,44 @@ class fdm(base):
 		sxy = self.sxy
 		szy = self.szy
 
+		src_x = self.src_x
+		src_z = self.src_z
+		rec_x = self.rec_x
+		rec_z = self.rec_z
+
+		stf_x = self.stf_x
+		stf_y = self.stf_y
+		stf_z = self.stf_z
+
+		bound = self.bound
+
+		sh = self.config['sh']
+		psv = self.config['psv']
+
+		nsrc = self.nsrc
+		nrec = self.nrec
+
+		if self.config['combine_sources']:
+			isrc = -1
+		else:
+			isrc = self.taskid
 
 		for it in range(1):
 		# for it in range(self.nt):
 			# FIXME isfe
-			if self.config['sh']:
-				div_sy[dim](dsy, sxy, szy, dx, dz, nx, nz);
+			# FIXME src_z, src_z => src
+			if sh:
+				div_sy[dim](dsy, sxy, szy, dx, dz, nx, nz)
+				add_dsy[nsrc, 1](dsy, stf_y, src_x, src_z, isrc, it, nt, nz)
+				# add_vy[dim](vy, uy, dsy, rho, absbound, dt, dim);
+				# divVY<<<dim.dg, dim.db>>>(dvydx, dvydz, vy, dx, dz, dim);
+				# updateSY<<<dim.dg, dim.db>>>(sxy, szy, dvydx, dvydz, mu, dt, dim);
 
-			if self.config['psv']:
-				div_sxz[dim](dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz);
+			if psv:
+				div_sxz[dim](dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz)
+				add_dsxz[nsrc, 1](dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz)
+				# updateVXZ<<<dim.dg, dim.db>>>(vx, vz, ux, uz, dsx, dsz, rho, absbound, dt, dim);
+				# divVXZ<<<dim.dg, dim.db>>>(dvxdx, dvxdz, dvzdx, dvzdz, vx, vz, dx, dz, dim);
+				# updateSXZ<<<dim.dg, dim.db>>>(sxx, szz, sxz, dvxdx, dvxdz, dvzdx, dvzdz, lambda, mu, dt, dim);
+
+			print('id', self.taskid, isrc)
