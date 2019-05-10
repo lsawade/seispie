@@ -4,7 +4,7 @@ class forward(base):
 	""" forward simulation
 	"""
 
-	def setup(self, config):
+	def setup(self):
 		""" initialize
 		"""
 		pass

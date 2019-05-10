@@ -78,7 +78,10 @@ def get_coord_files(dir):
          abspath(join(dir, subdir, 'proc000000_z.bin'))]
          for subdir in [
          '.',
-         '../model',
+         '../model_init',
+         '../../model_init',
+         '../../../model_init',
+         '../../../../model_init',
          '../output/model_init',
          '../../output/model_init',
          '../../../output/model_init',

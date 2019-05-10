@@ -2,7 +2,7 @@ from os import path
 import numpy as np
 
 class base:
-	def setup(self, config):
+	def setup(self):
 		raise NotImplementedError
 
 	def run_forward(self):

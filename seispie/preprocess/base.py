@@ -1,5 +1,5 @@
 class base:
-	def setup(self, config):
+	def setup(self):
 		raise NotImplementedError
 
 	

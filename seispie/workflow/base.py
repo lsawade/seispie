@@ -4,7 +4,7 @@ class base:
 	""" workflow
 	"""
 
-	def setup(self, config):
+	def setup(self):
 		""" initialize
 		"""
 		raise NotImplementedError

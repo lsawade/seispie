@@ -33,28 +33,35 @@ def get_config():
 
 		
 def setup(config, workdir):
-	# system setup
-	mode = config['workflow']['mode']
-	Workflow = getattr(import_module('seispie.workflow.' + mode), mode);
-	system = import_module('seispie.workflow.system.' + config['workflow']['system'])
-	for method in ['call']:
-		setattr(Workflow, method, getattr(system, method))
-
-	# create workflow
-	workflow = Workflow()
-	workflow.setup(config['workflow'])
-
-	# set path
-	workflow.path = dict()
+	# wrap path
+	path_dict = dict()
 	for dir in config['path']:
 		if config['path'][dir] != 'no':
-			workflow.path[dir] = path.join(workdir, config['path'][dir])
+			path_dict[dir] = path.join(workdir, config['path'][dir])
 
-	# load components
+	# import workflow
+	mode = config['workflow']['mode']
+	imported = getattr(import_module('seispie.workflow.' + mode), mode);
+	imported.call = import_module('seispie.workflow.system.' + config['workflow']['system']).call
+
+	# setup workflow
+	workflow = imported()
+	workflow.config = config['workflow']
+	workflow.path = path_dict
+	workflow.setup()
+
+	# import and setup components
 	for section in workflow.modules:
+		# import component
 		method = config[section]['method']
-		module = getattr(import_module('seispie.' + section + '.' + method), method)()
-		module.setup(config[section])
+		imported = getattr(import_module('seispie.' + section + '.' + method), method)
+
+		# setup component
+		module = imported()
+		module.config = config[section]
+		module.path = path_dict
+		module.setup()
+
 		setattr(workflow, section, module)
 
 	# start workflow

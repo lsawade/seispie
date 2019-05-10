@@ -1,5 +1,5 @@
 from . base import base
 
 class default(base):
-	def setup(self, config):
+	def setup(self):
 		pass
