@@ -97,25 +97,19 @@ def div_sxz(dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz):
 			dsz[k] += 9 * (szz[k] - szz[k-1]) / (8 * dz) - (szz[k+1] - szz[k-2]) / (24 * dz)
 
 @cuda.jit
-def stf_dsy(dsy, stf_y, src_x, src_z, isrc, it, nt, nz):
+def stf_dsy(dsy, stf_y, src_id, isrc, it, nt):
 	ib = cuda.blockIdx.x
-	xs = src_x[ib]
-	zs = src_z[ib]
-
 	if isrc < 0 or isrc == ib:
 		ks = ib * nt + it
-		km = xs * nz + zs
+		km = src_id[ib]
 		dsy[km] += stf_y[ks]
 
 @cuda.jit
-def stf_dsxz(dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz):
+def stf_dsxz(dsx, dsz, stf_x, stf_z, src_id, isrc, it, nt):
 	ib = cuda.blockIdx.x
-	xs = src_x[ib]
-	zs = src_z[ib]
-
 	if isrc < 0 or isrc == ib:
 		ks = ib * nt + it
-		km = xs * nz + zs
+		km = src_id[ib]
 		dsx[km] += stf_x[ks]
 		dsz[km] += stf_z[ks]
 
@@ -191,16 +185,16 @@ class fdm(base):
 		src = np.loadtxt(self.path['sources'], ndmin=2)
 		nsrc = self.nsrc = src.shape[0]
 
-		src_x = np.zeros(nsrc, dtype='int32')
-		src_z = np.zeros(nsrc, dtype='int32')
+		src_id = np.zeros(nsrc, dtype='int32')
 
 		stf_x = np.zeros(nsrc * self.nt)
 		stf_y = np.zeros(nsrc * self.nt)
 		stf_z = np.zeros(nsrc * self.nt)
 
 		for isrc in range(nsrc):
-			src_x[isrc] = int(np.round(src[isrc][0] / self.dx))
-			src_z[isrc] = int(np.round(src[isrc][1] / self.dz))
+			src_x = int(np.round(src[isrc][0] / self.dx))
+			src_z = int(np.round(src[isrc][1] / self.dz))
+			src_id[isrc] = src_x * self.nz + src_z
 
 			for it in range(0, self.nt):
 				istf = isrc * self.nt + it
@@ -209,9 +203,7 @@ class fdm(base):
 		# allocate array
 		stream = self.stream
 
-		self.src_x = cuda.to_device(src_x, stream=stream)
-		self.src_z = cuda.to_device(src_z, stream=stream)
-
+		self.src_id = cuda.to_device(src_id, stream=stream)
 		self.stf_x = cuda.to_device(stf_x, stream=stream)
 		self.stf_y = cuda.to_device(stf_y, stream=stream)
 		self.stf_z = cuda.to_device(stf_z, stream=stream)
@@ -236,11 +228,11 @@ class fdm(base):
 	def import_model(self, model_true):
 		""" import model
 		"""
-		model = self.imported_model = dict()
-		model_dir = 'true' if model_true else 'init'
+		model = dict()
+		model_dir = self.path['model_true'] if model_true else self.path['model_init']
 
 		for name in ['x', 'z', 'vp', 'vs', 'rho']:
-			filename = path.join('model_' + model_dir, 'proc000000_' + name + '.bin')
+			filename = path.join(model_dir, 'proc000000_' + name + '.bin')
 			with open(filename) as f:
 				if not hasattr(self, 'npt'):
 					f.seek(0)
@@ -282,34 +274,29 @@ class fdm(base):
 			abs_left, abs_right, abs_bottom, abs_top, nx, nz
 		);
 		
+		dats = []
+
 		if self.config['sh'] == 'yes':
-			self.vy = cuda.to_device(zeros, stream=stream)
-			self.uy = cuda.to_device(zeros, stream=stream)
-			self.sxy = cuda.to_device(zeros, stream=stream)
-			self.szy = cuda.to_device(zeros, stream=stream)
-			self.dsy = cuda.to_device(zeros, stream=stream)
-			self.dvydx = cuda.to_device(zeros, stream=stream)
-			self.dvydz = cuda.to_device(zeros, stream=stream)
+			dats += ['vy', 'uy', 'sxy', 'szy', 'dsy', 'dvydx', 'dvydz']
 
 		if self.config['psv'] == 'yes':
-			self.vx = cuda.to_device(zeros, stream=stream)
-			self.vz = cuda.to_device(zeros, stream=stream)
-			self.ux = cuda.to_device(zeros, stream=stream)
-			self.uz = cuda.to_device(zeros, stream=stream)
-			self.sxx = cuda.to_device(zeros, stream=stream)
-			self.szz = cuda.to_device(zeros, stream=stream)
-			self.sxz = cuda.to_device(zeros, stream=stream)
-			self.dsx = cuda.to_device(zeros, stream=stream)
-			self.dsz = cuda.to_device(zeros, stream=stream)
-			self.dvxdx = cuda.to_device(zeros, stream=stream)
-			self.dvxdz = cuda.to_device(zeros, stream=stream)
-			self.dvzdx = cuda.to_device(zeros, stream=stream)
-			self.dvzdz = cuda.to_device(zeros, stream=stream)
+			dats += [
+				'vx', 'vz', 'ux',' uz', 'sxx', 'szz', 'sxz',
+				'dsx', 'dsz','dvxdx', 'dvxdz', 'dvzdx', 'dvzdz'
+			]
+
+		for dat in dats:
+			setattr(self, dat, cuda.to_device(zeros, stream=stream))
 
 		# FIXME interpolate model
 
 		# change parameterization
 		vps2lm[self.dim](self.lam, self.mu, self.rho)
+
+		# write coordinate file
+		if self.config['save_coordinates']:
+			self.export_field(x, 'proc000000_x')
+			self.export_field(z, 'proc000000_z')
 		
 		# # FIXME remove below
 		# lm2vps[self.dim](self.lam, self.mu, self.rho)
@@ -352,17 +339,16 @@ class fdm(base):
 		# for it in range(1):
 		for it in range(self.nt):
 			# FIXME isfe
-			# FIXME src_z, src_z => src
 			if sh:
 				div_sy[dim](self.dsy, self.sxy, self.szy, dx, dz, nx, nz)
-				stf_dsy[self.nsrc, 1](self.dsy, self.stf_y, self.src_x, self.src_z, isrc, it, nt, nz)
+				stf_dsy[self.nsrc, 1](self.dsy, self.stf_y, self.src_id, isrc, it, nt)
 				add_vy[dim](self.vy, self.uy, self.dsy, self.rho, self.bound, dt)
 				div_vy[dim](self.dvydx, self.dvydz, self.vy, dx, dz, nx, nz)
 				add_sy[dim](self.sxy, self.szy, self.dvydx, self.dvydz, self.mu, dt)
 
 			if psv:
 				div_sxz[dim](self.dsx, self.dsz, self.sxx, self.szz, self.sxz, dx, dz, nx, nz)
-				stf_dsxz[self.nsrc, 1](self.dsx, self.dsz, self.stf_x, self.stf_z, self.src_x, self.src_z, isrc, it, nt, nz)
+				stf_dsxz[self.nsrc, 1](self.dsx, self.dsz, self.stf_x, self.stf_z, self.src_id, isrc, it, nt)
 				add_vxz[dim](self.vx, self.vz, self.ux, self.uz, self.dsx, self.dsz, rho, bound, dt)
 				div_vxz[dim](self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.vx, self.vz, dx, dz, nx, nz)
 				add_sxz[dim](self.sxx, self.szz, self.sxz, self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.lam, self.mu, dt)
@@ -371,15 +357,15 @@ class fdm(base):
 				if sh:
 					self.vy.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'proc_%06dvy' % (it))
+					self.export_field(out, 'proc%06d_vy' % (it))
 
 				if psv:
 					self.vx.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'proc_%06dvx' % (it))
+					self.export_field(out, 'proc%06d_vx' % (it))
 					self.vz.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'proc_%06dvz' % (it))
+					self.export_field(out, 'proc%06d_vz' % (it))
 				
 
 

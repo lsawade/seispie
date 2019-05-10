@@ -7,22 +7,37 @@ from argparse import ArgumentParser
 from configparser import ConfigParser
 
 
-def get_config():
-	# parse arguments
-	parser = ArgumentParser()
-	parser.add_argument('--workdir', nargs='?', default=getcwd())
-	parser.add_argument('--config_file', nargs='?', default='config.ini')
-	args = parser.parse_args()
-
-	# assert path exists
-	workdir = args.workdir
-	config_file = path.join(workdir, args.config_file)
+def parse_config(workdir, config_file):
+	# assertions
+	config_path = path.join(workdir, config_file)
 	assert path.exists(workdir)
-	assert path.exists(config_file)
+	assert path.exists(config_path)
 
 	# parse config.ini
 	config = ConfigParser()
-	config.read(config_file)
+	config.read(config_path)
+
+	# inheritance
+	if 'inherit' in config['workflow']:
+		parent_name = config['workflow']['inherit']
+		parent, _ = parse_config(workdir + '/../' + parent_name, config_file)
+
+		for section in ['workflow', 'slurm', 'preprocess', 'solver', 'postprocess', 'optimize', 'path']:
+			if section in parent:
+				if not section in config:
+					config[section] = parent[section]
+					if section == 'path':
+						for key in config[section]:
+							if config[section][key] != 'no':
+								config[section][key] = '../' + parent_name + '/' + config[section][key]
+				else:
+					for key in parent[section]:
+						if not key in config[section]:
+							if section == 'path' and parent[section][key] != 'no':
+								config[section][key] = '../' + parent_name + '/' + parent[section][key]
+							else:
+								config[section][key] = parent[section][key]
+
 
 	# ensure output directory exists
 	outdir = path.join(workdir, config['path']['output'])
@@ -30,6 +45,15 @@ def get_config():
 		makedirs(outdir)
 
 	return config, workdir
+	
+def get_config():
+	# parse arguments
+	parser = ArgumentParser()
+	parser.add_argument('--workdir', nargs='?', default=getcwd())
+	parser.add_argument('--config_file', nargs='?', default='config.ini')
+	args = parser.parse_args()
+
+	return parse_config(args.workdir, args.config_file)
 
 		
 def setup(config, workdir):
