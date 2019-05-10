@@ -97,7 +97,7 @@ def div_sxz(dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz):
 			dsz[k] += 9 * (szz[k] - szz[k-1]) / (8 * dz) - (szz[k+1] - szz[k-2]) / (24 * dz)
 
 @cuda.jit
-def add_dsy(dsy, stf_y, src_x, src_z, isrc, it, nt, nz):
+def stf_dsy(dsy, stf_y, src_x, src_z, isrc, it, nt, nz):
 	ib = cuda.blockIdx.x
 	xs = src_x[ib]
 	zs = src_z[ib]
@@ -108,7 +108,7 @@ def add_dsy(dsy, stf_y, src_x, src_z, isrc, it, nt, nz):
 		dsy[km] += stf_y[ks]
 
 @cuda.jit
-def add_dsxz(dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz):
+def stf_dsxz(dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz):
 	ib = cuda.blockIdx.x
 	xs = src_x[ib]
 	zs = src_z[ib]
@@ -119,6 +119,66 @@ def add_dsxz(dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz):
 		dsx[km] += stf_x[ks]
 		dsz[km] += stf_z[ks]
 
+@cuda.jit
+def add_vy(vy, uy, dsy, rho, bound, dt):
+	k = idx()
+	if k < vy.size:
+		vy[k] = bound[k] * (vy[k] + dt * dsy[k] / rho[k])
+		uy[k] += vy[k] * dt
+
+@cuda.jit
+def add_vxz(vx, vz, ux, uz, dsx, dsz, rho, bound, dt):
+	k = idx()
+	if k < vx.size:
+		vx[k] = bound[k] * (vx[k] + dt * dsx[k] / rho[k])
+		vz[k] = bound[k] * (vz[k] + dt * dsz[k] / rho[k])
+		ux[k] += vx[k] * dt;
+		uz[k] += vz[k] * dt;
+
+@cuda.jit
+def div_vy(dvydx, dvydz, vy, dx, dz, nx, nz):
+	k, i, j = idxij(nz)
+	if k < dvydx.size:
+		if i >= 1 and i < nx - 2:
+			dvydx[k] = 9 * (vy[k+nz] - vy[k]) / (8 * dx) - (vy[k+2*nz] - vy[k-nz]) / (24 * dx)
+		else:
+			dvydx[k] = 0
+		if j >= 1 and j < nz - 2:
+			dvydz[k] = 9 * (vy[k+1] - vy[k]) / (8 * dz) - (vy[k+2] - vy[k-1]) / (24 * dz)
+		else:
+			dvydz[k] = 0
+
+@cuda.jit
+def div_vxz(dvxdx, dvxdz, dvzdx, dvzdz, vx, vz, dx, dz, nx, nz):
+	k, i, j = idxij(nz)
+	if k < dvxdx.size:
+		if i >= 1 and i < nx - 2:
+			dvxdx[k] = 9 * (vx[k+nz] - vx[k]) / (8 * dx) - (vx[k+2*nz] - vx[k-nz]) / (24 * dx)
+			dvzdx[k] = 9 * (vz[k+nz] - vz[k]) / (8 * dx) - (vz[k+2*nz] - vz[k-nz]) / (24 * dx)
+		else:
+			dvxdx[k] = 0
+			dvzdx[k] = 0		
+		if j >= 1 and j < nz - 2:
+			dvxdz[k] = 9 * (vx[k+1] - vx[k]) / (8 * dz) - (vx[k+2] - vx[k-1]) / (24 * dz)
+			dvzdz[k] = 9 * (vz[k+1] - vz[k]) / (8 * dz) - (vz[k+2] - vz[k-1]) / (24 * dz)
+		else:
+			dvxdz[k] = 0
+			dvzdz[k] = 0	
+
+@cuda.jit
+def add_sy(sxy, szy, dvydx, dvydz, mu, dt):
+	k = idx()
+	if k < sxy.size:
+		sxy[k] += dt * mu[k] * dvydx[k]
+		szy[k] += dt * mu[k] * dvydz[k]
+
+@cuda.jit
+def add_sxz(sxx, szz, sxz, dvxdx, dvxdz, dvzdx, dvzdz, lam, mu, dt):
+	k = idx()
+	if k < sxx.size:
+		sxx[k] += dt * ((lam[k] + 2 * mu[k]) * dvxdx[k] + lam[k] * dvzdz[k])
+		szz[k] += dt * ((lam[k] + 2 * mu[k]) * dvzdz[k] + lam[k] * dvxdx[k])
+		sxz[k] += dt * (mu[k] * (dvxdz[k] + dvzdx[k]))
 
 class fdm(base):
 	def setup(self):
@@ -270,6 +330,8 @@ class fdm(base):
 	def run_forward(self):
 		stream = self.stream
 		dim = self.dim
+		sh = self.config['sh']
+		psv = self.config['psv']
 
 		nx = self.nx
 		nz = self.nz
@@ -278,14 +340,33 @@ class fdm(base):
 		dz = self.dz
 		dt = self.dt
 
-		dsx = self.dsx
-		dsy = self.dsy
-		dsz = self.dsz
-		sxx = self.sxx
-		szz = self.szz
-		sxz = self.sxz
-		sxy = self.sxy
-		szy = self.szy
+		lam = self.lam
+		mu = self.mu
+		rho = self.rho
+
+		if sh:
+			vy = self.vy
+			uy = self.uy
+			sxy = self.sxy
+			szy = self.szy
+			dsy = self.dsy
+			dvydx = self.dvydx
+			dvydz = self.dvydz
+
+		if psv:
+			vx = self.vx
+			vz = self.vz
+			ux = self.ux
+			uz = self.uz
+			sxx = self.sxx
+			szz = self.szz
+			sxz = self.sxz
+			dsx = self.dsx
+			dsz = self.dsz
+			dvxdx = self.dvxdx
+			dvxdz = self.dvxdz
+			dvzdx = self.dvzdx
+			dvzdz = self.dvzdz
 
 		src_x = self.src_x
 		src_z = self.src_z
@@ -298,9 +379,6 @@ class fdm(base):
 
 		bound = self.bound
 
-		sh = self.config['sh']
-		psv = self.config['psv']
-
 		nsrc = self.nsrc
 		nrec = self.nrec
 
@@ -309,22 +387,30 @@ class fdm(base):
 		else:
 			isrc = self.taskid
 
-		for it in range(1):
-		# for it in range(self.nt):
+		out = np.zeros(self.npt)
+
+		# for it in range(1):
+		for it in range(self.nt):
 			# FIXME isfe
 			# FIXME src_z, src_z => src
 			if sh:
 				div_sy[dim](dsy, sxy, szy, dx, dz, nx, nz)
-				add_dsy[nsrc, 1](dsy, stf_y, src_x, src_z, isrc, it, nt, nz)
-				# add_vy[dim](vy, uy, dsy, rho, absbound, dt, dim);
-				# divVY<<<dim.dg, dim.db>>>(dvydx, dvydz, vy, dx, dz, dim);
-				# updateSY<<<dim.dg, dim.db>>>(sxy, szy, dvydx, dvydz, mu, dt, dim);
+				stf_dsy[nsrc, 1](dsy, stf_y, src_x, src_z, isrc, it, nt, nz)
+				add_vy[dim](vy, uy, dsy, rho, bound, dt)
+				div_vy[dim](dvydx, dvydz, vy, dx, dz, nx, nz)
+				add_sy[dim](sxy, szy, dvydx, dvydz, mu, dt)
 
 			if psv:
 				div_sxz[dim](dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz)
-				add_dsxz[nsrc, 1](dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz)
-				# updateVXZ<<<dim.dg, dim.db>>>(vx, vz, ux, uz, dsx, dsz, rho, absbound, dt, dim);
-				# divVXZ<<<dim.dg, dim.db>>>(dvxdx, dvxdz, dvzdx, dvzdz, vx, vz, dx, dz, dim);
-				# updateSXZ<<<dim.dg, dim.db>>>(sxx, szz, sxz, dvxdx, dvxdz, dvzdx, dvzdz, lambda, mu, dt, dim);
+				stf_dsxz[nsrc, 1](dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz)
+				add_vxz[dim](vx, vz, ux, uz, dsx, dsz, rho, bound, dt)
+				div_vxz[dim](dvxdx, dvxdz, dvzdx, dvzdz, vx, vz, dx, dz, nx, nz)
+				add_sxz[dim](sxx, szz, sxz, dvxdx, dvxdz, dvzdx, dvzdz, lam, mu, dt)
 
-			print('id', self.taskid, isrc)
+			if it > 0 and it % 800 == 0:
+				vx.copy_to_host(out, stream=stream)
+				stream.synchronize()
+				self.export_field(out, 'vx%d' % it)
+
+
+		print('id', self.taskid, isrc)

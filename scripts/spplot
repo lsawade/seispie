@@ -164,5 +164,6 @@ if __name__ == '__main__':
         pylab.ylabel('z')
         pylab.title(comp)
         pylab.gca().invert_yaxis()
+        pylab.set_cmap('seismic')
 
         pylab.show()
