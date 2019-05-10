@@ -187,8 +187,8 @@ class fdm(base):
 		self.nt = int(self.config['nt'])
 		self.dt = float(self.config['dt'])
 
-	def import_sources(self, dir):
-		src = np.loadtxt(dir, ndmin=2)
+	def import_sources(self):
+		src = np.loadtxt(self.path['sources'], ndmin=2)
 		nsrc = self.nsrc = src.shape[0]
 
 		src_x = np.zeros(nsrc, dtype='int32')
@@ -216,8 +216,8 @@ class fdm(base):
 		self.stf_y = cuda.to_device(stf_y, stream=stream)
 		self.stf_z = cuda.to_device(stf_z, stream=stream)
 
-	def import_stations(self, dir):
-		rec = np.loadtxt(dir)
+	def import_stations(self):
+		rec = np.loadtxt(self.path['stations'])
 		nrec = self.nrec = rec.shape[0]
 
 		rec_x = np.zeros(nrec, dtype='int32')
@@ -233,13 +233,14 @@ class fdm(base):
 		self.rec_x = cuda.to_device(rec_x, stream=stream)
 		self.rec_z = cuda.to_device(rec_z, stream=stream)
 
-	def import_model(self, dir):
+	def import_model(self, model_true):
 		""" import model
 		"""
 		model = self.imported_model = dict()
+		model_dir = 'true' if model_true else 'init'
 
 		for name in ['x', 'z', 'vp', 'vs', 'rho']:
-			filename = path.join(dir, 'proc000000_' + name + '.bin')
+			filename = path.join('model_' + model_dir, 'proc000000_' + name + '.bin')
 			with open(filename) as f:
 				if not hasattr(self, 'npt'):
 					f.seek(0)
