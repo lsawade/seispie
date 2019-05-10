@@ -174,6 +174,13 @@ def add_sxz(sxx, szz, sxz, dvxdx, dvxdz, dvzdx, dvzdz, lam, mu, dt):
 		szz[k] += dt * ((lam[k] + 2 * mu[k]) * dvzdz[k] + lam[k] * dvxdx[k])
 		sxz[k] += dt * (mu[k] * (dvxdz[k] + dvzdx[k]))
 
+@cuda.jit
+def save_obs(obs, u, rec_id, it, nt, nx, nz):
+	ib = cuda.blockIdx.x
+	kr = ib * nt + it
+	km = rec_id[ib]
+	obs[kr] = u[km]
+
 class fdm(base):
 	def setup(self):
 		# FIXME validate config
@@ -184,7 +191,6 @@ class fdm(base):
 	def import_sources(self):
 		src = np.loadtxt(self.path['sources'], ndmin=2)
 		nsrc = self.nsrc = src.shape[0]
-
 		src_id = np.zeros(nsrc, dtype='int32')
 
 		stf_x = np.zeros(nsrc * self.nt, dtype='float32')
@@ -209,21 +215,23 @@ class fdm(base):
 		self.stf_z = cuda.to_device(stf_z, stream=stream)
 
 	def import_stations(self):
-		rec = np.loadtxt(self.path['stations'])
+		rec = np.loadtxt(self.path['stations'], ndmin=2)
 		nrec = self.nrec = rec.shape[0]
-
-		rec_x = np.zeros(nrec, dtype='int32')
-		rec_z = np.zeros(nrec, dtype='int32')
+		rec_id = np.zeros(nrec, dtype='int32')
 
 		# allocate array
 		stream = self.stream
 
 		for irec in range(nrec):
-			rec_x[irec] = int(np.round(rec[irec][0] / self.dx))
-			rec_z[irec] = int(np.round(rec[irec][1] / self.dz))
+			rec_x = int(np.round(rec[irec][0] / self.dx))
+			rec_z = int(np.round(rec[irec][1] / self.dz))
+			rec_id[irec] = rec_x * self.nz + rec_z
 
-		self.rec_x = cuda.to_device(rec_x, stream=stream)
-		self.rec_z = cuda.to_device(rec_z, stream=stream)
+		obs = np.zeros(nrec * self.nt, dtype='float32')
+		self.rec_id = cuda.to_device(rec_id, stream=stream)
+		self.obs_x = cuda.to_device(obs, stream=stream)
+		self.obs_y = cuda.to_device(obs, stream=stream)
+		self.obs_z = cuda.to_device(obs, stream=stream)
 
 	def import_model(self, model_true):
 		""" import model
@@ -314,6 +322,17 @@ class fdm(base):
 			f.seek(4)
 			field.tofile(f)
 
+	def setup_adjoint(self):
+		stream = self.stream
+		syn = self.syn_y[self.taskid]
+		t1 = np.zeros(self.nt*self.nrec,dtype='float32')
+		self.obs_y.copy_to_host(t1, stream=stream)
+		stream.synchronize()
+
+		import matplotlib.pyplot as plt
+		plt.plot(syn[0:self.nt])
+		plt.plot(t1[0:self.nt])
+		plt.show()
 
 	def run_forward(self):
 		stream = self.stream
@@ -338,13 +357,13 @@ class fdm(base):
 		sfe = int(self.config['save_snapshot'])
 
 		for it in range(self.nt):
-			# FIXME isfe
 			if sh:
 				div_sy[dim](self.dsy, self.sxy, self.szy, dx, dz, nx, nz)
 				stf_dsy[self.nsrc, 1](self.dsy, self.stf_y, self.src_id, isrc, it, nt)
 				add_vy[dim](self.vy, self.uy, self.dsy, self.rho, self.bound, dt, npt)
 				div_vy[dim](self.dvydx, self.dvydz, self.vy, dx, dz, nx, nz)
 				add_sy[dim](self.sxy, self.szy, self.dvydx, self.dvydz, self.mu, dt, npt)
+				save_obs[self.nrec, 1](self.obs_y, self.uy, self.rec_id, it, nt, nx, nz)
 
 			if psv:
 				div_sxz[dim](self.dsx, self.dsz, self.sxx, self.szz, self.sxz, dx, dz, nx, nz)
@@ -352,6 +371,8 @@ class fdm(base):
 				add_vxz[dim](self.vx, self.vz, self.ux, self.uz, self.dsx, self.dsz, rho, bound, dt)
 				div_vxz[dim](self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.vx, self.vz, dx, dz, nx, nz)
 				add_sxz[dim](self.sxx, self.szz, self.sxz, self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.lam, self.mu, dt)
+				save_obs[self.nrec, 1](self.obs_x, self.ux, self.rec_id, it, nt, nx, nz)
+				save_obs[self.nrec, 1](self.obs_z, self.uz, self.rec_id, it, nt, nx, nz)
 
 			if it > 0 and it % sfe == 0:
 				if sh:
@@ -368,4 +389,10 @@ class fdm(base):
 					self.export_field(out, 'proc%06d_vz' % (it))			
 
 
+		# out = np.zeros(self.nrec*nt,dtype='float32')
+		# self.obs_y.copy_to_host(out, stream=stream)
+		# stream.synchronize()
+		# import matplotlib.pyplot as plt
+		# plt.plot(out)
+		# plt.show()
 		print('id', self.taskid, isrc)
