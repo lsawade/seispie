@@ -69,10 +69,10 @@ def set_bound(bound, width, alpha, left, right, bottom, top, nx, nz):
 			aw = alpha * (width - j - 1)
 			bound[k] *= math.exp(-aw * aw)
 
-@cuda.jit
+@cuda.jit('void(float32[:], float32[:], float32[:], float32, float32, int32, int32)')
 def div_sy(dsy, sxy, szy, dx, dz, nx, nz):
 	k, i, j = idxij(nz)
-	if k < dsy.size:
+	if k < nx * nz:
 		if i >= 2 and i < nx - 2:
 			dsy[k] = 9 * (sxy[k] - sxy[k-nz]) / (8 * dx) - (sxy[k+nz] - sxy[k-2*nz]) / (24 * dx)
 		else:
@@ -96,7 +96,7 @@ def div_sxz(dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz):
 			dsx[k] += 9 * (sxz[k] - sxz[k-1]) / (8 * dz) - (sxz[k+1] - sxz[k-2]) / (24 * dz)
 			dsz[k] += 9 * (szz[k] - szz[k-1]) / (8 * dz) - (szz[k+1] - szz[k-2]) / (24 * dz)
 
-@cuda.jit
+@cuda.jit('void(float32[:], float32[:], int32[:], int32, int32, int32)')
 def stf_dsy(dsy, stf_y, src_id, isrc, it, nt):
 	ib = cuda.blockIdx.x
 	if isrc < 0 or isrc == ib:
@@ -113,10 +113,10 @@ def stf_dsxz(dsx, dsz, stf_x, stf_z, src_id, isrc, it, nt):
 		dsx[km] += stf_x[ks]
 		dsz[km] += stf_z[ks]
 
-@cuda.jit
-def add_vy(vy, uy, dsy, rho, bound, dt):
+@cuda.jit('void(float32[:], float32[:], float32[:], float32[:], float32[:], float32, int32)')
+def add_vy(vy, uy, dsy, rho, bound, dt, npt):
 	k = idx()
-	if k < vy.size:
+	if k < npt:
 		vy[k] = bound[k] * (vy[k] + dt * dsy[k] / rho[k])
 		uy[k] += vy[k] * dt
 
@@ -129,10 +129,10 @@ def add_vxz(vx, vz, ux, uz, dsx, dsz, rho, bound, dt):
 		ux[k] += vx[k] * dt;
 		uz[k] += vz[k] * dt;
 
-@cuda.jit
+@cuda.jit('void(float32[:], float32[:], float32[:], float32, float32, int32, int32)')
 def div_vy(dvydx, dvydz, vy, dx, dz, nx, nz):
 	k, i, j = idxij(nz)
-	if k < dvydx.size:
+	if k < nx * nz:
 		if i >= 1 and i < nx - 2:
 			dvydx[k] = 9 * (vy[k+nz] - vy[k]) / (8 * dx) - (vy[k+2*nz] - vy[k-nz]) / (24 * dx)
 		else:
@@ -159,10 +159,10 @@ def div_vxz(dvxdx, dvxdz, dvzdx, dvzdz, vx, vz, dx, dz, nx, nz):
 			dvxdz[k] = 0
 			dvzdz[k] = 0	
 
-@cuda.jit
-def add_sy(sxy, szy, dvydx, dvydz, mu, dt):
+@cuda.jit('void(float32[:], float32[:], float32[:], float32[:], float32[:], float32, int32)')
+def add_sy(sxy, szy, dvydx, dvydz, mu, dt, npt):
 	k = idx()
-	if k < sxy.size:
+	if k < npt:
 		sxy[k] += dt * mu[k] * dvydx[k]
 		szy[k] += dt * mu[k] * dvydz[k]
 
@@ -187,9 +187,9 @@ class fdm(base):
 
 		src_id = np.zeros(nsrc, dtype='int32')
 
-		stf_x = np.zeros(nsrc * self.nt)
-		stf_y = np.zeros(nsrc * self.nt)
-		stf_z = np.zeros(nsrc * self.nt)
+		stf_x = np.zeros(nsrc * self.nt, dtype='float32')
+		stf_y = np.zeros(nsrc * self.nt, dtype='float32')
+		stf_z = np.zeros(nsrc * self.nt, dtype='float32')
 
 		for isrc in range(nsrc):
 			src_x = int(np.round(src[isrc][0] / self.dx))
@@ -239,7 +239,7 @@ class fdm(base):
 					self.npt = np.fromfile(f, dtype='int32', count=1)
 
 				f.seek(4)
-				model[name] = np.fromfile(f, dtype='float32').astype('float64')
+				model[name] = np.fromfile(f, dtype='float32')
 
 		npt = self.npt[0]
 		ntpb = int(self.config['threads_per_block'])
@@ -257,7 +257,7 @@ class fdm(base):
 
 		# allocate array
 		stream = self.stream
-		zeros = np.zeros(npt)
+		zeros = np.zeros(npt, dtype='float32')
 
 		self.lam = cuda.to_device(model['vp'], stream=stream)
 		self.mu = cuda.to_device(model['vs'], stream=stream)
@@ -312,7 +312,7 @@ class fdm(base):
 			self.npt.tofile(f)
 
 			f.seek(4)
-			field.astype('float32').tofile(f)
+			field.tofile(f)
 
 
 	def run_forward(self):
@@ -328,23 +328,23 @@ class fdm(base):
 		dz = self.dz
 		dt = self.dt
 
-		if self.config['combine_sources']:
+		if self.config['combine_sources'] == 'yes':
 			isrc = -1
 		else:
 			isrc = self.taskid
 
-		out = np.zeros(self.npt)
+		npt = self.npt
+		out = np.zeros(npt, dtype='float32')
 		sfe = int(self.config['save_snapshot'])
 
-		# for it in range(1):
 		for it in range(self.nt):
 			# FIXME isfe
 			if sh:
 				div_sy[dim](self.dsy, self.sxy, self.szy, dx, dz, nx, nz)
 				stf_dsy[self.nsrc, 1](self.dsy, self.stf_y, self.src_id, isrc, it, nt)
-				add_vy[dim](self.vy, self.uy, self.dsy, self.rho, self.bound, dt)
+				add_vy[dim](self.vy, self.uy, self.dsy, self.rho, self.bound, dt, npt)
 				div_vy[dim](self.dvydx, self.dvydz, self.vy, dx, dz, nx, nz)
-				add_sy[dim](self.sxy, self.szy, self.dvydx, self.dvydz, self.mu, dt)
+				add_sy[dim](self.sxy, self.szy, self.dvydx, self.dvydz, self.mu, dt, npt)
 
 			if psv:
 				div_sxz[dim](self.dsx, self.dsz, self.sxx, self.szz, self.sxz, dx, dz, nx, nz)
@@ -365,8 +365,7 @@ class fdm(base):
 					self.export_field(out, 'proc%06d_vx' % (it))
 					self.vz.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'proc%06d_vz' % (it))
-				
+					self.export_field(out, 'proc%06d_vz' % (it))			
 
 
 		print('id', self.taskid, isrc)
