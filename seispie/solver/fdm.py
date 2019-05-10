@@ -194,7 +194,43 @@ def interaction_muy(k_mu, dvydx, dvydx_fw, dvydz, dvydz_fw, ndt, nx, nz):
 	if k < nx * nz:
 		k_mu[k] -= (dvydx[k] * dvydx_fw[k] + dvydz[k] * dvydz_fw[k]) * ndt
 
+@cuda.jit(device=True)
+def gaussian(x, sigma):
+	return (1 / (math.sqrt(2 * math.pi) * sigma)) * math.exp(-x * x / (2 * sigma * sigma));
 
+@cuda.jit
+def init_gausian(gsum, sigma, nx, nz):
+	k, i, j = idxij(nz)
+	if k < nx * nz:
+		sumx = 0
+		for n in range(nx):
+			sumx += gaussian(i - n, sigma)
+		
+		sumz = 0
+		for n in range(nz):
+			sumz += gaussian(j - n, sigma)
+		
+		gsum[k] = sumx * sumz
+
+@cuda.jit
+def apply_gauxxian_x(data, gtmp, sigma, nx, nz):
+	k, i, j = idxij(nz)
+	if k < nx * nz:
+		sumx = 0
+		for n in range(nx):
+			sumx += gaussian(i - n, sigma) * data[n * nz + j]
+
+		gtmp[k] = sumx
+
+@cuda.jit
+def apply_gauxxian_z(data, gtmp, gsum, sigma, nx, nz):
+	k, i, j = idxij(nz)
+	if k < nx * nz:
+		sumz = 0
+		for n in range(nz):
+			sumz += gaussian(j - n, sigma) * gtmp[i * nz + n]
+
+		data[k] = sumz / gsum[k]
 
 class fdm(base):
 	def setup(self):
@@ -369,6 +405,10 @@ class fdm(base):
 		self.k_mu = cuda.to_device(zeros, stream=stream)
 		self.k_rho = cuda.to_device(zeros, stream=stream)
 
+		self.gsum = cuda.to_device(zeros, stream=stream)
+		self.gtmp = cuda.to_device(zeros, stream=stream)
+		self.sigma = int(self.config['smooth'])
+		init_gausian[self.dim](self.gsum, self.sigma, self.nx, self.nz)
 
 	def compute_misfit(self, comp, h_syn):
 		stream = self.stream
@@ -385,7 +425,6 @@ class fdm(base):
 		clear_field[dim](self.k_mu)
 		clear_field[dim](self.k_rho)
 			
-
 	def clear_wavefields(self):
 		dim = self.dim
 
@@ -404,7 +443,6 @@ class fdm(base):
 			clear_field[dim](self.szz)
 			clear_field[dim](self.sxz)
 		
-
 	def run_forward(self):
 		stream = self.stream
 		dim = self.dim
@@ -481,9 +519,7 @@ class fdm(base):
 					self.export_field(out, 'vx', it)
 					self.vz.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'vz', it)			
-
-		print('forward task %d' % (self.taskid+1))
+					self.export_field(out, 'vz', it)
 
 	def run_adjoint(self):
 		stream = self.stream
@@ -528,4 +564,81 @@ class fdm(base):
 				save_obs[self.nrec, 1](self.obs_x, self.ux, self.rec_id, it, nt, nx, nz)
 				save_obs[self.nrec, 1](self.obs_z, self.uz, self.rec_id, it, nt, nx, nz)
 		
-		print('adjoint task %d' % (self.taskid+1))
+
+	def smooth(self, data):
+		dim = self.dim
+		apply_gauxxian_x[dim](data, self.gtmp, self.sigma, self.nx, self.nz);
+		apply_gauxxian_z[dim](data, self.gtmp, self.gsum, self.sigma, self.nx, self.nz);
+
+	def generate_traces(self):
+		syn_x = self.syn_x = []
+		syn_y = self.syn_y = []
+		syn_z = self.syn_z = []
+		stream = self.stream
+		nsrc = self.nsrc
+		nrec = self.nrec
+		nt = self.nt
+		
+		sh = self.sh
+		psv = self.psv
+
+		print('Generating traces')
+		for i in range(nsrc):
+			print('  task %02d / %02d' % (i+1, nsrc))
+			self.taskid = i
+			self.run_forward()
+			if sh:
+				out = np.zeros(nt * nrec, dtype='float32')
+				self.obs_y.copy_to_host(out, stream=stream)
+				syn_y.append(out)
+
+			if psv:
+				out = np.zeros(nt * nrec, dtype='float32')
+				self.obs_x.copy_to_host(out, stream=stream)
+				syn_x.append(out)
+				out = np.zeros(nt * nrec, dtype='float32')
+				self.obs_z.copy_to_host(out, stream=stream)
+				syn_z.append(out)
+
+			stream.synchronize()
+
+	def run_kernel(self, adj):
+		if adj:
+			print('Computing kernels')
+		else:
+			print('Computing misfit')
+
+		stream = self.stream
+		nsrc = self.nsrc
+		nrec = self.nrec
+		nt = self.nt
+		
+		sh = self.sh
+		psv = self.psv
+
+		self.setup_adjoint()
+		self.clear_kernels()
+
+		misfit=0
+		
+		for i in range(nsrc):
+			print('  task %02d / %02d' % (i+1, nsrc+1))
+			self.taskid = i
+			self.run_forward()
+			if sh:
+				misfit += self.compute_misfit('y', self.syn_y[i])
+				if adj:
+					self.run_adjoint()
+
+			if psv:
+				misfit += self.compute_misfit('x', self.syn_x[i])
+				misfit += self.compute_misfit('z', self.syn_z[i])
+				if adj:
+					self.run_adjoint()
+
+		if adj:
+			self.smooth(self.k_mu)
+
+		print('  misfit = %.2f' % misfit)
+
+		return misfit
