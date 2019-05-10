@@ -16,21 +16,21 @@ class adjoint(base):
 		"""
 		solver = self.solver
 
-		solver.import_model(True)
+		solver.import_model(1)
 		solver.import_sources()
 		solver.import_stations()
 
 		start = time()
-		syn_x = solver.syn_x = []
-		syn_y = solver.syn_y = []
-		syn_z = solver.syn_z = []
+		syn_x = []
+		syn_y = []
+		syn_z = []
 		stream = solver.stream
 		nsrc = solver.nsrc
 		nrec = solver.nrec
 		nt = solver.nt
 		
-		sh = 1 if solver.config['sh'] == 'yes' else 0
-		psv = 1 if solver.config['psv'] == 'yes' else 0
+		sh = solver.sh
+		psv = solver.psv
 
 		for i in range(nsrc):
 			solver.taskid = i
@@ -51,18 +51,28 @@ class adjoint(base):
 			stream.synchronize()
 
 		solver.import_model(False)
-
+		solver.setup_adjoint()
+		solver.clear_kernels()
+		
 		for i in range(nsrc):
 			solver.taskid = i
 			solver.run_forward()
-			solver.setup_adjoint()
+			if sh:
+				solver.compute_misfit('y', syn_y[i])
+				solver.run_adjoint()
 
-			# import matplotlib.pyplot as plt
-			# plt.plot(obs[i][0:solver.nt])
-			# plt.plot(out[i:solver.nt])
-			# plt.show()
+			if psv:
+				solver.compute_misfit('x', syn_x[i])
+				solver.compute_misfit('z', syn_z[i])
+				solver.run_adjoint()
 
-		print(time() - start)
+		print('elapsed time:', time() - start)
+
+
+		out = np.zeros(npt, dtype='float32')
+		solver.k_mu.copy_to_host(out, stream)
+		stream.synchronize()
+		solver.export_field(out, 'kmu')
 
 	@property
 	def modules(self):

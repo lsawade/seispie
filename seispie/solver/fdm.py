@@ -6,6 +6,7 @@ from numba import cuda
 
 from seispie.solver.base import base
 from seispie.solver.source.ricker import ricker
+from seispie.solver.misfit.waveform import waveform
 
 @cuda.jit(device=True)
 def idx():
@@ -45,6 +46,12 @@ def lm2vps(vp, vs, rho):
 
 		vp[k] = math.sqrt((lam + 2 * mu) / rho[k])
 		vs[k] = math.sqrt(mu / rho[k])
+
+@cuda.jit
+def clear_field(field):
+	k = idx()
+	if k < field.size:
+		field[k] = 0
 
 @cuda.jit
 def set_bound(bound, width, alpha, left, right, bottom, top, nx, nz):
@@ -181,12 +188,24 @@ def save_obs(obs, u, rec_id, it, nt, nx, nz):
 	km = rec_id[ib]
 	obs[kr] = u[km]
 
+@cuda.jit('void(float32[:], float32[:], float32[:], float32[:], float32[:], float32, int32, int32)')
+def interaction_muy(k_mu, dvydx, dvydx_fw, dvydz, dvydz_fw, ndt, nx, nz):
+	k = idx()
+	if k < nx * nz:
+		k_mu[k] -= (dvydx[k] * dvydx_fw[k] + dvydz[k] * dvydz_fw[k]) * ndt
+
+
+
 class fdm(base):
 	def setup(self):
 		# FIXME validate config
 		self.stream = cuda.stream()
 		self.nt = int(self.config['nt'])
 		self.dt = float(self.config['dt'])
+		self.sh = 1 if self.config['sh'] == 'yes' else 0
+		self.psv = 1 if self.config['psv'] == 'yes' else 0
+		self.sae = 0
+		self.nsa = 0
 
 	def import_sources(self):
 		src = np.loadtxt(self.path['sources'], ndmin=2)
@@ -284,10 +303,10 @@ class fdm(base):
 		
 		dats = []
 
-		if self.config['sh'] == 'yes':
+		if self.sh:
 			dats += ['vy', 'uy', 'sxy', 'szy', 'dsy', 'dvydx', 'dvydz']
 
-		if self.config['psv'] == 'yes':
+		if self.psv:
 			dats += [
 				'vx', 'vz', 'ux',' uz', 'sxx', 'szz', 'sxz',
 				'dsx', 'dsz','dvxdx', 'dvxdz', 'dvzdx', 'dvzdz'
@@ -303,18 +322,11 @@ class fdm(base):
 
 		# write coordinate file
 		if self.config['save_coordinates']:
-			self.export_field(x, 'proc000000_x')
-			self.export_field(z, 'proc000000_z')
-		
-		# # FIXME remove below
-		# lm2vps[self.dim](self.lam, self.mu, self.rho)
-		# t = np.zeros(npt)
-		# self.bound.copy_to_host(t, stream=stream)
-		# stream.synchronize()
-		# self.export_field(t, 'vq')
-		# print('valalaah', t[0])
+			self.export_field(x, 'x')
+			self.export_field(z, 'z')
 
-	def export_field(self, field, name):
+	def export_field(self, field, name, it=0):
+		name = 'proc%06d_%s' % (it, name)
 		with open(self.path['output'] + '/' + name + '.bin', 'w') as f:
 			f.seek(0)
 			self.npt.tofile(f)
@@ -323,22 +335,81 @@ class fdm(base):
 			field.tofile(f)
 
 	def setup_adjoint(self):
+		self.sae = int(self.config['adjoint_interval'])
+		self.nsa = int(self.nt / self.sae)
 		stream = self.stream
-		syn = self.syn_y[self.taskid]
-		t1 = np.zeros(self.nt*self.nrec,dtype='float32')
-		self.obs_y.copy_to_host(t1, stream=stream)
-		stream.synchronize()
+		adstf = np.zeros(self.nt * self.nrec, dtype='float32')
 
-		import matplotlib.pyplot as plt
-		plt.plot(syn[0:self.nt])
-		plt.plot(t1[0:self.nt])
-		plt.show()
+		nsa = self.nsa
+		npt = self.nx * self.nz
+		zeros = np.zeros(npt, dtype='float32')
+
+		if self.sh:
+			self.adstf_y = cuda.to_device(adstf, stream=stream)
+			self.dvydx_fw = cuda.to_device(zeros, stream=stream)
+			self.dvydz_fw = cuda.to_device(zeros, stream=stream)
+
+			self.uy_fwd = np.zeros([nsa, npt], dtype='float32')
+			self.vy_fwd = np.zeros([nsa, npt], dtype='float32')
+
+		if self.psv:
+			self.adstf_x = cuda.to_device(adstf, stream=stream)
+			self.adstf_z = cuda.to_device(adstf, stream=stream)
+			self.dvxdx_fw = cuda.to_device(zeros, stream=stream)
+			self.dvxdz_fw = cuda.to_device(zeros, stream=stream)
+			self.dvzdx_fw = cuda.to_device(zeros, stream=stream)
+			self.dvzdz_fw = cuda.to_device(zeros, stream=stream)
+
+			self.ux_fwd = np.zeros([nsa, npt], dtype='float32')
+			self.vx_fwd = np.zeros([nsa, npt], dtype='float32')
+			self.uz_fwd = np.zeros([nsa, npt], dtype='float32')
+			self.vz_fwd = np.zeros([nsa, npt], dtype='float32')
+
+		self.k_lam = cuda.to_device(zeros, stream=stream)
+		self.k_mu = cuda.to_device(zeros, stream=stream)
+		self.k_rho = cuda.to_device(zeros, stream=stream)
+
+
+	def compute_misfit(self, comp, h_syn):
+		stream = self.stream
+		syn = cuda.to_device(h_syn, stream)
+		obs = getattr(self, 'obs_' + comp)
+		adstf = getattr(self, 'adstf_' + comp)
+		misfit = waveform(syn, obs, adstf, self.nt, self.dt, self.nrec, stream)
+		return misfit
+
+	def clear_kernels(self):
+		dim = self.dim
+
+		clear_field[dim](self.k_lam)
+		clear_field[dim](self.k_mu)
+		clear_field[dim](self.k_rho)
+			
+
+	def clear_wavefields(self):
+		dim = self.dim
+
+		if self.sh:
+			clear_field[dim](self.vy)
+			clear_field[dim](self.uy)
+			clear_field[dim](self.sxy)
+			clear_field[dim](self.szy)
+		
+		if self.psv:
+			clear_field[dim](self.vx)
+			clear_field[dim](self.vz)
+			clear_field[dim](self.ux)
+			clear_field[dim](self.uz)
+			clear_field[dim](self.sxx)
+			clear_field[dim](self.szz)
+			clear_field[dim](self.sxz)
+		
 
 	def run_forward(self):
 		stream = self.stream
 		dim = self.dim
-		sh = 1 if self.config['sh'] == 'yes' else 0
-		psv = 1 if self.config['psv'] == 'yes' else 0
+		sh = self.sh
+		psv = self.psv
 
 		nx = self.nx
 		nz = self.nz
@@ -355,8 +426,24 @@ class fdm(base):
 		npt = self.npt
 		out = np.zeros(npt, dtype='float32')
 		sfe = int(self.config['save_snapshot'])
+		sae = self.sae
+
+		self.clear_wavefields()
 
 		for it in range(self.nt):
+			isa = -1
+			if sae and (it + 1) % sae == 0:
+				isa = int(self.nsa - (it + 1) / sae)
+
+			if isa >= 0:
+				if sh:
+					self.uy.copy_to_host(self.uy_fwd[isa], stream=stream)
+
+				if psv:
+					self.ux.copy_to_host(self.ux_fwd[isa], stream=stream)
+					self.uz.copy_to_host(self.uz_fwd[isa], stream=stream)
+
+
 			if sh:
 				div_sy[dim](self.dsy, self.sxy, self.szy, dx, dz, nx, nz)
 				stf_dsy[self.nsrc, 1](self.dsy, self.stf_y, self.src_id, isrc, it, nt)
@@ -374,25 +461,71 @@ class fdm(base):
 				save_obs[self.nrec, 1](self.obs_x, self.ux, self.rec_id, it, nt, nx, nz)
 				save_obs[self.nrec, 1](self.obs_z, self.uz, self.rec_id, it, nt, nx, nz)
 
-			if it > 0 and it % sfe == 0:
+			if isa >= 0:
+				if sh:
+					self.vy.copy_to_host(self.vy_fwd[isa], stream=stream)
+					
+				if psv:
+					self.vx.copy_to_host(self.vx_fwd[isa], stream=stream)
+					self.vz.copy_to_host(self.vz_fwd[isa], stream=stream)
+
+			if sfe and it > 0 and it % sfe == 0:
 				if sh:
 					self.vy.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'proc%06d_vy' % (it))
+					self.export_field(out, 'vy', it)
 
 				if psv:
 					self.vx.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'proc%06d_vx' % (it))
+					self.export_field(out, 'vx', it)
 					self.vz.copy_to_host(out, stream=stream)
 					stream.synchronize()
-					self.export_field(out, 'proc%06d_vz' % (it))			
+					self.export_field(out, 'vz', it)			
+
+		print('forward task %d' % (self.taskid+1))
+
+	def run_adjoint(self):
+		stream = self.stream
+		dim = self.dim
+		sh = self.sh
+		psv = self.psv
+
+		nx = self.nx
+		nz = self.nz
+		nt = self.nt
+		dx = self.dx
+		dz = self.dz
+		dt = self.dt
+
+		npt = self.npt
+		sae = self.sae
+
+		self.clear_wavefields()
+
+		for it in range(self.nt):
+			if sh:
+				div_sy[dim](self.dsy, self.sxy, self.szy, dx, dz, nx, nz)
+				stf_dsy[self.nrec, 1](self.dsy, self.adstf_y, self.rec_id, -1, it, nt)
+				add_vy[dim](self.vy, self.uy, self.dsy, self.rho, self.bound, dt, npt)
+				div_vy[dim](self.dvydx, self.dvydz, self.vy, dx, dz, nx, nz)
+				add_sy[dim](self.sxy, self.szy, self.dvydx, self.dvydz, self.mu, dt, npt)
+				if (it + sae) % sae == 0:
+					isae = int((it + sae) / sae - 1)
+					ndt = sae * dt
+					self.dsy.copy_to_device(self.uy_fwd[isae], stream=stream)
+					div_vy[dim](self.dvydx, self.dvydz, self.uy, dx, dz, nx, nz)
+					div_vy[dim](self.dvydx_fw, self.dvydz_fw, self.dsy, dx, dz, nx, nz)
+					interaction_muy[dim](self.k_mu, self.dvydx, self.dvydx_fw, self.dvydz, self.dvydz_fw, ndt, nx, nz)
 
 
-		# out = np.zeros(self.nrec*nt,dtype='float32')
-		# self.obs_y.copy_to_host(out, stream=stream)
-		# stream.synchronize()
-		# import matplotlib.pyplot as plt
-		# plt.plot(out)
-		# plt.show()
-		print('id', self.taskid, isrc)
+			if psv:
+				div_sxz[dim](self.dsx, self.dsz, self.sxx, self.szz, self.sxz, dx, dz, nx, nz)
+				stf_dsxz[self.nsrc, 1](self.dsx, self.dsz, self.stf_x, self.stf_z, self.src_id, isrc, it, nt)
+				add_vxz[dim](self.vx, self.vz, self.ux, self.uz, self.dsx, self.dsz, rho, bound, dt)
+				div_vxz[dim](self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.vx, self.vz, dx, dz, nx, nz)
+				add_sxz[dim](self.sxx, self.szz, self.sxz, self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.lam, self.mu, dt)
+				save_obs[self.nrec, 1](self.obs_x, self.ux, self.rec_id, it, nt, nx, nz)
+				save_obs[self.nrec, 1](self.obs_z, self.uz, self.rec_id, it, nt, nx, nz)
+		
+		print('adjoint task %d' % (self.taskid+1))

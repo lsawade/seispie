@@ -12,7 +12,7 @@ class forward(base):
 	def run(self):
 		""" start workflow
 		"""
-		self.call(0, 'solver', 'import_model', True)
+		self.call(0, 'solver', 'import_model', 1)
 		self.call(0, 'solver', 'import_sources')
 		self.call(0, 'solver', 'import_stations')
 
@@ -21,6 +21,8 @@ class forward(base):
 		
 		else:
 			self.call(self.solver.nsrc, 'solver', 'run_forward')
+		
+		print('elapsed time:', time() - start)
 			
 
 	@property
