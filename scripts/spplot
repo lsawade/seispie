@@ -95,7 +95,7 @@ def get_coord_files(dir):
 
 def get_data_files(dir):
     files = []
-    for file in glob(dir+'/'+'proc000000*.bin*'):
+    for file in glob(dir+'/'+'proc*.bin*'):
         if 'jacobian' in file or \
            'ibool' in file or \
            'x.bin' in file or \
@@ -106,7 +106,7 @@ def get_data_files(dir):
 
 
 def get_title(file):
-    pattern = '.*proc000000_(.*).bin'
+    pattern = '.*proc_(.*).bin'
     return re.match(pattern, file).group(1)
 
 

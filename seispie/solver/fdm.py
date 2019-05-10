@@ -319,7 +319,7 @@ class fdm(base):
 		# print('valalaah', t[0])
 
 	def export_field(self, field, name):
-		with open(self.path['output'] + '/proc000000_' + name + '.bin', 'w') as f:
+		with open(self.path['output'] + '/' + name + '.bin', 'w') as f:
 			f.seek(0)
 			self.npt.tofile(f)
 
@@ -330,8 +330,8 @@ class fdm(base):
 	def run_forward(self):
 		stream = self.stream
 		dim = self.dim
-		sh = self.config['sh']
-		psv = self.config['psv']
+		sh = 1 if self.config['sh'] == 'yes' else 0
+		psv = 1 if self.config['psv'] == 'yes' else 0
 
 		nx = self.nx
 		nz = self.nz
@@ -340,77 +340,46 @@ class fdm(base):
 		dz = self.dz
 		dt = self.dt
 
-		lam = self.lam
-		mu = self.mu
-		rho = self.rho
-
-		if sh:
-			vy = self.vy
-			uy = self.uy
-			sxy = self.sxy
-			szy = self.szy
-			dsy = self.dsy
-			dvydx = self.dvydx
-			dvydz = self.dvydz
-
-		if psv:
-			vx = self.vx
-			vz = self.vz
-			ux = self.ux
-			uz = self.uz
-			sxx = self.sxx
-			szz = self.szz
-			sxz = self.sxz
-			dsx = self.dsx
-			dsz = self.dsz
-			dvxdx = self.dvxdx
-			dvxdz = self.dvxdz
-			dvzdx = self.dvzdx
-			dvzdz = self.dvzdz
-
-		src_x = self.src_x
-		src_z = self.src_z
-		rec_x = self.rec_x
-		rec_z = self.rec_z
-
-		stf_x = self.stf_x
-		stf_y = self.stf_y
-		stf_z = self.stf_z
-
-		bound = self.bound
-
-		nsrc = self.nsrc
-		nrec = self.nrec
-
 		if self.config['combine_sources']:
 			isrc = -1
 		else:
 			isrc = self.taskid
 
 		out = np.zeros(self.npt)
+		sfe = int(self.config['save_snapshot'])
 
 		# for it in range(1):
 		for it in range(self.nt):
 			# FIXME isfe
 			# FIXME src_z, src_z => src
 			if sh:
-				div_sy[dim](dsy, sxy, szy, dx, dz, nx, nz)
-				stf_dsy[nsrc, 1](dsy, stf_y, src_x, src_z, isrc, it, nt, nz)
-				add_vy[dim](vy, uy, dsy, rho, bound, dt)
-				div_vy[dim](dvydx, dvydz, vy, dx, dz, nx, nz)
-				add_sy[dim](sxy, szy, dvydx, dvydz, mu, dt)
+				div_sy[dim](self.dsy, self.sxy, self.szy, dx, dz, nx, nz)
+				stf_dsy[self.nsrc, 1](self.dsy, self.stf_y, self.src_x, self.src_z, isrc, it, nt, nz)
+				add_vy[dim](self.vy, self.uy, self.dsy, self.rho, self.bound, dt)
+				div_vy[dim](self.dvydx, self.dvydz, self.vy, dx, dz, nx, nz)
+				add_sy[dim](self.sxy, self.szy, self.dvydx, self.dvydz, self.mu, dt)
 
 			if psv:
-				div_sxz[dim](dsx, dsz, sxx, szz, sxz, dx, dz, nx, nz)
-				stf_dsxz[nsrc, 1](dsx, dsz, stf_x, stf_z, src_x, src_z, isrc, it, nt, nz)
-				add_vxz[dim](vx, vz, ux, uz, dsx, dsz, rho, bound, dt)
-				div_vxz[dim](dvxdx, dvxdz, dvzdx, dvzdz, vx, vz, dx, dz, nx, nz)
-				add_sxz[dim](sxx, szz, sxz, dvxdx, dvxdz, dvzdx, dvzdz, lam, mu, dt)
+				div_sxz[dim](self.dsx, self.dsz, self.sxx, self.szz, self.sxz, dx, dz, nx, nz)
+				stf_dsxz[self.nsrc, 1](self.dsx, self.dsz, self.stf_x, self.stf_z, self.src_x, self.src_z, isrc, it, nt, nz)
+				add_vxz[dim](self.vx, self.vz, self.ux, self.uz, self.dsx, self.dsz, rho, bound, dt)
+				div_vxz[dim](self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.vx, self.vz, dx, dz, nx, nz)
+				add_sxz[dim](self.sxx, self.szz, self.sxz, self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.lam, self.mu, dt)
 
-			if it > 0 and it % 800 == 0:
-				vx.copy_to_host(out, stream=stream)
-				stream.synchronize()
-				self.export_field(out, 'vx%d' % it)
+			if it > 0 and it % sfe == 0:
+				if sh:
+					self.vy.copy_to_host(out, stream=stream)
+					stream.synchronize()
+					self.export_field(out, 'proc_%06dvy' % (it))
+
+				if psv:
+					self.vx.copy_to_host(out, stream=stream)
+					stream.synchronize()
+					self.export_field(out, 'proc_%06dvx' % (it))
+					self.vz.copy_to_host(out, stream=stream)
+					stream.synchronize()
+					self.export_field(out, 'proc_%06dvz' % (it))
+				
 
 
 		print('id', self.taskid, isrc)
