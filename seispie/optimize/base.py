@@ -51,7 +51,7 @@ class base:
 		print('')
 		print('Misfits:')
 		for misfit in misfits:
-			print('  %.2f', misfit)
+			print('  %.2f' % misfit)
 
 		print('')
 		print('Elapsed time: %.2f' % (time() - start))
