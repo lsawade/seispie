@@ -1,4 +1,5 @@
 from time import time
+import numpy as np
 
 class base:
 	def setup(self):
@@ -20,15 +21,17 @@ class base:
 
 		misfits = []
 
-		for i in range(1):
+		for i in range(niter):
 			print('Iteration %d' % (i+1))
 			misfit, self.g_new, self.m_new = solver.compute_gradient()
-			solver.export_field(self.m_new, 'mu', i)
+			
+			if i > 0:
+				solver.export_field(self.m_new, 'mu', i-1)
 
 			if i == 0:
 				ref = misfit
 
-			misfits.append(misfits / ref)
+			misfits.append(misfit / ref)
 			
 			self.p_new = self.compute_direction()
 			self.m_old = self.m_new
@@ -39,10 +42,19 @@ class base:
 				print('Line search failed')
 				break
 
-			solver.export_field(self.g_new, 'kmu', i)
+		misfit = solver.compute_misfit()
+		misfits.append(misfit / ref)
+		m_new = np.zeros(solver.nx * solver.nz, dtype='float32')
+		solver.mu.copy_to_host(m_new, solver.stream)
+		solver.stream.synchronize()
+		solver.export_field(m_new, 'mu', niter)
 
 		print('')
-		print('Misfits: ', misfits)
+		print('Misfits:')
+		for misfit in misfits:
+			print('  %.2f', misfits)
+
+		print('')
 		print('Elapsed time: %.2f' % (time() - start))
 
 	

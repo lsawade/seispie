@@ -12,7 +12,7 @@ class cg(base):
 	def restart_search(self):
 		self.line_search.restart()
 
-	def pollak(g_new, g_old):
+	def pollak(self, g_new, g_old):
 		num = np.dot(g_new, g_new - g_old)
 		den = np.dot(g_old, g_old)
 		beta = num / den
@@ -25,13 +25,15 @@ class cg(base):
 			return -g_new
 
 		g_old = self.g_old
+		p_old = self.p_old
+
 		beta = self.pollak(g_new, g_old)
 		p_new = -g_new + beta * p_old
 
-		if abs(np.dot(g_new, g_old) / np.dot(g_new, g_new)) > self.ls_thresh:
-			print('  restarting CG: loss of conjugacy')
-			self.restart_search()
-			return -g_new
+		# if abs(np.dot(g_new, g_old) / np.dot(g_new, g_new)) > self.cg_thresh:
+		# 	print('  restarting CG: loss of conjugacy')
+		# 	self.restart_search()
+		# 	return -g_new
 
 		if np.dot(p_new, g_new) > 0:
 			print('  restarting CG: not descent')
