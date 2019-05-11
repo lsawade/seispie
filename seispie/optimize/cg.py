@@ -4,6 +4,7 @@ import numpy as np
 
 class cg(base):
 	def setup(self, workflow):
+		self.solver = workflow.solver
 		self.bracket = bracket(workflow.solver, self.config)
 
 	def line_search(self, misfit):

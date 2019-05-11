@@ -13,6 +13,7 @@ class forward(base):
 	def run(self):
 		""" start workflow
 		"""
+		solver = self.solver
 		start = time()
 		solver.import_model(1)
 		solver.import_sources()

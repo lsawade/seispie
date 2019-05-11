@@ -21,8 +21,6 @@ class inversion(base):
 		solver.import_traces()
 		solver.import_model(0)
 
-		self.optimize.set_solver(solver)
-		self.optimize.solver = solver
 		self.optimize.run()
 
 	@property

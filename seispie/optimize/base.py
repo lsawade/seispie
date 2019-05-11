@@ -2,7 +2,7 @@ from time import time
 import numpy as np
 
 class base:
-	def setup(self):
+	def setup(self, workflow):
 		raise NotImplementedError
 
 	def compute_direction(self):

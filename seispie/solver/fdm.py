@@ -234,7 +234,7 @@ def apply_gauxxian_z(data, gtmp, gsum, sigma, nx, nz):
 		data[k] = sumz / gsum[k]
 
 class fdm(base):
-	def setup(self):
+	def setup(self, workflow):
 		# FIXME validate config
 		self.stream = cuda.stream()
 		self.nt = int(self.config['nt'])

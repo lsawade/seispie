@@ -1,5 +1,5 @@
 class base:
-	def setup(self):
+	def setup(self, workflow):
 		raise NotImplementedError
 
 	
