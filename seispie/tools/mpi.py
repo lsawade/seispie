@@ -6,3 +6,6 @@ class mpi:
 	
 	def size(self):
 		return MPI.COMM_WORLD.Get_size()
+
+	def sync(self):
+		MPI.COMM_WORLD.Barrier()

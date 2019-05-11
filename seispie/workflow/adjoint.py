@@ -20,16 +20,20 @@ class adjoint(base):
 		solver.import_stations()
 		solver.import_traces()
 
-		start = time()
-		solver.import_model(0)
-		solver.run_kernel(1)
-		print('')
-		print('Elapsed time: %.2fs' % (time() - start))
+		if self.mpi:
+			self.mpi.sync()
+			print('done')
 
-		out = np.zeros(solver.nx*solver.nz, dtype='float32')
-		solver.k_mu.copy_to_host(out, stream=solver.stream)
-		solver.stream.synchronize()
-		solver.export_field(out, 'kmu')
+		# start = time()
+		# solver.import_model(0)
+		# solver.run_kernel(1)
+		# print('')
+		# print('Elapsed time: %.2fs' % (time() - start))
+
+		# out = np.zeros(solver.nx*solver.nz, dtype='float32')
+		# solver.k_mu.copy_to_host(out, stream=solver.stream)
+		# solver.stream.synchronize()
+		# solver.export_field(out, 'kmu')
 
 	@property
 	def modules(self):

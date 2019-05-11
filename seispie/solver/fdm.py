@@ -565,7 +565,6 @@ class fdm(base):
 				save_obs[self.nrec, 1](self.obs_x, self.ux, self.rec_id, it, nt, nx, nz)
 				save_obs[self.nrec, 1](self.obs_z, self.uz, self.rec_id, it, nt, nx, nz)
 		
-
 	def smooth(self, data):
 		dim = self.dim
 		apply_gauxxian_x[dim](data, self.gtmp, self.sigma, self.nx, self.nz)
@@ -584,6 +583,10 @@ class fdm(base):
 			tracedir = self.path['traces']
 
 			for i in range(nsrc):
+				if self.mpi:
+					if self.mpi.rank() != i:
+						continue
+				
 				if sh:
 					syn_y.append(np.fromfile('%s/vy_%06d.npy' % (tracedir, i), dtype='float32'))
 
@@ -596,41 +599,45 @@ class fdm(base):
 			nrec = self.nrec
 			nt = self.nt
 			
-			print('Generating traces')
+			tracedir = self.path['output'] + '/traces'
+			if not path.exists(tracedir):
+				makedirs(tracedir)
+			
+			if not self.mpi:
+				print('Generating traces')
+			
 			start = time()
 			for i in range(nsrc):
+				if self.mpi:
+					if self.mpi.rank() != i:
+						continue
+
 				print('  task %02d / %02d' % (i+1, nsrc))
 				self.taskid = i
 				self.run_forward()
+
 				if sh:
 					out = np.zeros(nt * nrec, dtype='float32')
 					self.obs_y.copy_to_host(out, stream=stream)
 					syn_y.append(out)
+					out.tofile('%s/vy_%06d.npy' % (tracedir, i))
 
 				if psv:
 					out = np.zeros(nt * nrec, dtype='float32')
 					self.obs_x.copy_to_host(out, stream=stream)
 					syn_x.append(out)
+					out.tofile('%s/vx_%06d.npy' % (tracedir, i))
+					
 					out = np.zeros(nt * nrec, dtype='float32')
 					self.obs_z.copy_to_host(out, stream=stream)
 					syn_z.append(out)
+					out.tofile('%s/vz_%06d.npy' % (tracedir, i))
 
 				stream.synchronize()
-			
-			tracedir = self.path['output'] + '/traces'
-			if not path.exists(tracedir):
-				makedirs(tracedir)
 
-			for i in range(nsrc):
-				if sh:
-					syn_y[i].tofile('%s/vy_%06d.npy' % (tracedir, i))
-
-				if psv:
-					syn_x[i].tofile('%s/vx_%06d.npy' % (tracedir, i))
-					syn_z[i].tofile('%s/vz_%06d.npy' % (tracedir, i))
-
-			print('Elapsed time: %.2fs' % (time() - start))
-			print('')
+			if not self.mpi:
+				print('Elapsed time: %.2fs' % (time() - start))
+				print('')
 
 	def compute_misfit(self):
 		return self.run_kernel(0)
