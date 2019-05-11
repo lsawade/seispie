@@ -112,7 +112,6 @@ class bracket:
 				status = 0
 
 		else:
-			print('fuck')
 			alpha = 0
 			status = -1
 

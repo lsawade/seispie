@@ -31,11 +31,6 @@ class cg(base):
 		beta = self.pollak(g_new, g_old)
 		p_new = -g_new + beta * p_old
 
-		# if abs(np.dot(g_new, g_old) / np.dot(g_new, g_new)) > self.cg_thresh:
-		# 	print('  restarting CG: loss of conjugacy')
-		# 	self.restart_search()
-		# 	return -g_new
-
 		if np.dot(p_new, g_new) > 0:
 			print('  restarting CG: not descent')
 			self.restart_search()
