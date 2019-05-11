@@ -1,7 +1,8 @@
 import numpy as np
 import math
 
-from os import path
+from os import path, makedirs
+from time import time
 from numba import cuda
 
 from seispie.solver.base import base
@@ -570,37 +571,66 @@ class fdm(base):
 		apply_gauxxian_x[dim](data, self.gtmp, self.sigma, self.nx, self.nz);
 		apply_gauxxian_z[dim](data, self.gtmp, self.gsum, self.sigma, self.nx, self.nz);
 
-	def generate_traces(self):
-		syn_x = self.syn_x = []
-		syn_y = self.syn_y = []
-		syn_z = self.syn_z = []
-		stream = self.stream
+	def import_traces(self):
 		nsrc = self.nsrc
-		nrec = self.nrec
-		nt = self.nt
-		
 		sh = self.sh
 		psv = self.psv
 
-		print('Generating traces')
-		for i in range(nsrc):
-			print('  task %02d / %02d' % (i+1, nsrc))
-			self.taskid = i
-			self.run_forward()
-			if sh:
-				out = np.zeros(nt * nrec, dtype='float32')
-				self.obs_y.copy_to_host(out, stream=stream)
-				syn_y.append(out)
+		syn_x = self.syn_x = []
+		syn_y = self.syn_y = []
+		syn_z = self.syn_z = []
 
-			if psv:
-				out = np.zeros(nt * nrec, dtype='float32')
-				self.obs_x.copy_to_host(out, stream=stream)
-				syn_x.append(out)
-				out = np.zeros(nt * nrec, dtype='float32')
-				self.obs_z.copy_to_host(out, stream=stream)
-				syn_z.append(out)
+		if 'traces' in self.path:
+			tracedir = self.path['traces']
 
-			stream.synchronize()
+			for i in range(nsrc):
+				if sh:
+					syn_y.append(np.fromfile('%s/vy_%06d.npy' % (tracedir, i), dtype='float32'))
+
+				if psv:
+					syn_x.append(np.fromfile('%s/vx_%06d.npy' % (tracedir, i), dtype='float32'))
+					syn_z.append(np.fromfile('%s/vz_%06d.npy' % (tracedir, i), dtype='float32'))
+
+		else:
+			stream = self.stream
+			nrec = self.nrec
+			nt = self.nt
+			
+			print('Generating traces')
+			start = time()
+			for i in range(nsrc):
+				print('  task %02d / %02d' % (i+1, nsrc))
+				self.taskid = i
+				self.run_forward()
+				if sh:
+					out = np.zeros(nt * nrec, dtype='float32')
+					self.obs_y.copy_to_host(out, stream=stream)
+					syn_y.append(out)
+
+				if psv:
+					out = np.zeros(nt * nrec, dtype='float32')
+					self.obs_x.copy_to_host(out, stream=stream)
+					syn_x.append(out)
+					out = np.zeros(nt * nrec, dtype='float32')
+					self.obs_z.copy_to_host(out, stream=stream)
+					syn_z.append(out)
+
+				stream.synchronize()
+			
+			tracedir = self.path['output'] + '/traces'
+			if not path.exists(tracedir):
+				makedirs(tracedir)
+
+			for i in range(nsrc):
+				if sh:
+					syn_y[i].tofile('%s/vy_%06d.npy' % (tracedir, i))
+
+				if psv:
+					syn_x[i].tofile('%s/vx_%06d.npy' % (tracedir, i))
+					syn_z[i].tofile('%s/vz_%06d.npy' % (tracedir, i))
+
+			print('Elapsed time: %.2fs' % (time() - start))
+			print('')
 
 	def run_kernel(self, adj):
 		if adj:
@@ -622,7 +652,7 @@ class fdm(base):
 		misfit=0
 		
 		for i in range(nsrc):
-			print('  task %02d / %02d' % (i+1, nsrc+1))
+			print('  task %02d / %02d' % (i+1, nsrc))
 			self.taskid = i
 			self.run_forward()
 			if sh:
