@@ -65,7 +65,7 @@ def setup(config, workdir):
 
 	# import workflow
 	mode = config['workflow']['mode']
-	imported = getattr(import_module('seispie.workflow.' + mode), mode);
+	imported = getattr(import_module('seispie.workflow.' + mode), mode)
 	imported.call = import_module('seispie.workflow.system.' + config['workflow']['system']).call
 
 	# setup workflow
@@ -84,7 +84,6 @@ def setup(config, workdir):
 		module = imported()
 		module.config = config[section]
 		module.path = path_dict
-		module.setup()
 
 		setattr(workflow, section, module)
 

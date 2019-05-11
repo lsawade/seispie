@@ -15,6 +15,7 @@ class adjoint(base):
 		""" start workflow
 		"""
 		solver = self.solver
+		solver.setup()
 		solver.import_model(1)
 		solver.import_sources()
 		solver.import_stations()

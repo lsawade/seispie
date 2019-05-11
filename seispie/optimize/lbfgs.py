@@ -1,5 +1,1 @@
-from . base import base
-
-class lbfgs(base):
-	def setup(self):
-		pass
+from seispie.optimize.base import base

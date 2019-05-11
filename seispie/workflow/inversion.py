@@ -15,25 +15,16 @@ class inversion(base):
 		""" start workflow
 		"""
 		solver = self.solver
+		solver.setup()
 		solver.import_model(1)
 		solver.import_sources()
 		solver.import_stations()
-
-		start = time()
-		solver.generate_traces()
-		mid = time()
-		print('')
-		print('Trace generation: %.2fs' % (mid - start))
-		print('')
+		solver.import_traces()
 		solver.import_model(0)
-		solver.run_kernel(1)
-		print('')
-		print('Elapsed time: %.2fs' % (time() - mid))
 
-		out = np.zeros(solver.nx*solver.nz, dtype='float32')
-		solver.k_mu.copy_to_host(out, stream=solver.stream)
-		solver.stream.synchronize()
-		solver.export_field(out, 'kmu')
+		self.optimize.setup(solver)
+		self.optimize.solver = solver
+		self.optimize.run()
 
 	@property
 	def modules(self):

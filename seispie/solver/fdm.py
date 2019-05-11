@@ -58,7 +58,7 @@ def clear_field(field):
 def set_bound(bound, width, alpha, left, right, bottom, top, nx, nz):
 	k, i, j = idxij(nz)
 	if k < bound.size:
-		bound[k] = 1;
+		bound[k] = 1
 
 		if left and i + 1 < width:
 			aw = alpha * (width - i - 1)
@@ -134,8 +134,8 @@ def add_vxz(vx, vz, ux, uz, dsx, dsz, rho, bound, dt):
 	if k < vx.size:
 		vx[k] = bound[k] * (vx[k] + dt * dsx[k] / rho[k])
 		vz[k] = bound[k] * (vz[k] + dt * dsz[k] / rho[k])
-		ux[k] += vx[k] * dt;
-		uz[k] += vz[k] * dt;
+		ux[k] += vx[k] * dt
+		uz[k] += vz[k] * dt
 
 @cuda.jit('void(float32[:], float32[:], float32[:], float32, float32, int32, int32)')
 def div_vy(dvydx, dvydz, vy, dx, dz, nx, nz):
@@ -193,11 +193,11 @@ def save_obs(obs, u, rec_id, it, nt, nx, nz):
 def interaction_muy(k_mu, dvydx, dvydx_fw, dvydz, dvydz_fw, ndt, nx, nz):
 	k = idx()
 	if k < nx * nz:
-		k_mu[k] -= (dvydx[k] * dvydx_fw[k] + dvydz[k] * dvydz_fw[k]) * ndt
+		k_mu[k] += (dvydx[k] * dvydx_fw[k] + dvydz[k] * dvydz_fw[k]) * ndt
 
 @cuda.jit(device=True)
 def gaussian(x, sigma):
-	return (1 / (math.sqrt(2 * math.pi) * sigma)) * math.exp(-x * x / (2 * sigma * sigma));
+	return (1 / (math.sqrt(2 * math.pi) * sigma)) * math.exp(-x * x / (2 * sigma * sigma))
 
 @cuda.jit
 def init_gausian(gsum, sigma, nx, nz):
@@ -336,7 +336,7 @@ class fdm(base):
 		set_bound[self.dim](
 			self.bound, int(self.config['abs_width']), float(self.config['abs_alpha']),
 			abs_left, abs_right, abs_bottom, abs_top, nx, nz
-		);
+		)
 		
 		dats = []
 
@@ -411,7 +411,7 @@ class fdm(base):
 		self.sigma = int(self.config['smooth'])
 		init_gausian[self.dim](self.gsum, self.sigma, self.nx, self.nz)
 
-	def compute_misfit(self, comp, h_syn):
+	def _compute_misfit(self, comp, h_syn):
 		stream = self.stream
 		syn = cuda.to_device(h_syn, stream)
 		obs = getattr(self, 'obs_' + comp)
@@ -568,8 +568,8 @@ class fdm(base):
 
 	def smooth(self, data):
 		dim = self.dim
-		apply_gauxxian_x[dim](data, self.gtmp, self.sigma, self.nx, self.nz);
-		apply_gauxxian_z[dim](data, self.gtmp, self.gsum, self.sigma, self.nx, self.nz);
+		apply_gauxxian_x[dim](data, self.gtmp, self.sigma, self.nx, self.nz)
+		apply_gauxxian_z[dim](data, self.gtmp, self.gsum, self.sigma, self.nx, self.nz)
 
 	def import_traces(self):
 		nsrc = self.nsrc
@@ -632,6 +632,18 @@ class fdm(base):
 			print('Elapsed time: %.2fs' % (time() - start))
 			print('')
 
+	def compute_misfit(self):
+		return self.run_kernel(0)
+
+	def compute_gradient(self):
+		misfit, kernel, model =  self.run_kernel(1)
+		output1 = np.zeros(self.nx * self.nz, dtype='float32')
+		output2 = np.zeros(self.nx * self.nz, dtype='float32')
+		kernel.copy_to_host(output1, stream=self.stream)
+		model.copy_to_host(output2, stream=self.stream)
+		self.stream.synchronize()
+		return misfit, output1, output2
+
 	def run_kernel(self, adj):
 		if adj:
 			print('Computing kernels')
@@ -656,13 +668,13 @@ class fdm(base):
 			self.taskid = i
 			self.run_forward()
 			if sh:
-				misfit += self.compute_misfit('y', self.syn_y[i])
+				misfit += self._compute_misfit('y', self.syn_y[i])
 				if adj:
 					self.run_adjoint()
 
 			if psv:
-				misfit += self.compute_misfit('x', self.syn_x[i])
-				misfit += self.compute_misfit('z', self.syn_z[i])
+				misfit += self._compute_misfit('x', self.syn_x[i])
+				misfit += self._compute_misfit('z', self.syn_z[i])
 				if adj:
 					self.run_adjoint()
 
@@ -671,4 +683,10 @@ class fdm(base):
 
 		print('  misfit = %.2f' % misfit)
 
-		return misfit
+		if adj:
+			return misfit, self.k_mu, self.mu
+		else:
+			return misfit
+
+	def update_model(self, mu):
+		self.mu = cuda.to_device(mu, stream=self.stream)
