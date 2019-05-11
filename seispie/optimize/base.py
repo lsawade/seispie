@@ -27,8 +27,7 @@ class base:
 			
 			if i > 0:
 				solver.export_field(self.m_new, 'mu', i-1)
-
-			if i == 0:
+			else:
 				ref = misfit
 
 			misfits.append(misfit / ref)
@@ -52,7 +51,7 @@ class base:
 		print('')
 		print('Misfits:')
 		for misfit in misfits:
-			print('  %.2f', misfits)
+			print('  %.2f', misfit)
 
 		print('')
 		print('Elapsed time: %.2f' % (time() - start))
