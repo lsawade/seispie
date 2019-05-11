@@ -67,12 +67,12 @@ def setup(config, workdir):
 	mpi = None
 	if config['workflow']['mpi'] == 'yes':
 		mpi = import_module('seispie.tools.mpi').mpi()
-		print(mpi)
 
 	# import workflow
 	mode = config['workflow']['mode']
 	workflow = getattr(import_module('seispie.workflow.' + mode), mode)()
 	workflow.dict = path_dict
+	workflow.mpi = mpi
 	workflow.setup()
 
 	# import and setup components
@@ -81,6 +81,7 @@ def setup(config, workdir):
 		module = getattr(import_module('seispie.' + section + '.' + method), method)()
 		module.config = config[section]
 		module.path = path_dict
+		module.mpi = mpi
 		module.setup(workflow)
 		setattr(workflow, section, module)
 
