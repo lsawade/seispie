@@ -14,16 +14,10 @@ class forward(base):
 		""" start workflow
 		"""
 		start = time()
-		self.call(0, 'solver', 'setup')
-		self.call(0, 'solver', 'import_model', 1)
-		self.call(0, 'solver', 'import_sources')
-		self.call(0, 'solver', 'import_stations')
-
-		if self.solver.config['combine_sources'] == 'yes':
-			self.call(1, 'solver', 'run_forward')
-		
-		else:
-			self.call(self.solver.nsrc, 'solver', 'run_forward')
+		solver.import_model(1)
+		solver.import_sources()
+		solver.import_stations()
+		solver.run_forward()
 		
 		print('elapsed time: %.2fs' % (time() - start))
 			

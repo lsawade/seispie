@@ -15,14 +15,13 @@ class inversion(base):
 		""" start workflow
 		"""
 		solver = self.solver
-		solver.setup()
 		solver.import_model(1)
 		solver.import_sources()
 		solver.import_stations()
 		solver.import_traces()
 		solver.import_model(0)
 
-		self.optimize.setup(solver)
+		self.optimize.set_solver(solver)
 		self.optimize.solver = solver
 		self.optimize.run()
 

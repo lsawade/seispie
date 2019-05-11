@@ -3,8 +3,8 @@ from seispie.optimize.line_search.bracket import bracket
 import numpy as np
 
 class cg(base):
-	def setup(self, solver):
-		self.bracket = bracket(solver, self.config)
+	def setup(self, workflow):
+		self.bracket = bracket(workflow.solver, self.config)
 
 	def line_search(self, misfit):
 		return self.bracket.run(self.m_new, self.g_new, self.p_new, misfit)
