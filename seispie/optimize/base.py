@@ -44,8 +44,9 @@ class base:
 			self.g_old = self.g_new
 
 			if self.line_search(misfit) < 0:
-				print('Line search failed')
-				break
+				if head:
+					print('Line search failed')
+					break
 
 		misfit = solver.compute_misfit()
 
@@ -62,6 +63,6 @@ class base:
 				print('  %.2f' % misfit)
 
 			print('')
-			print('Elapsed time: %.2f' % (time() - start))
+			print('Elapsed time: %.2fs' % (time() - start))
 
 	

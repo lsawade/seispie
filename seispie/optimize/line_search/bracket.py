@@ -30,6 +30,9 @@ class bracket:
 		return np.arccos(ang)
 
 	def run(self, m_new, g_new, p_new, f):
+		if self.head:
+			print('  step 1')
+
 		solver = self.solver
 		status = 0
 		alpha = 0
@@ -59,7 +62,8 @@ class bracket:
 			step_count += 1
 
 			alpha, status = self.calculate_step(step_count, step_max)
-			print('  step %d' % (step_count+1))
+			if self.head:
+				print('  step %d' % (step_count+1))
 
 			if status > 0:
 				solver.update_model(m_new + alpha * p_new)
@@ -70,7 +74,9 @@ class bracket:
 				if self.angle(p_new, -g_new) < 1e-3:
 					return status
 				else:
-					print('  restarting line search')
+					if self.head:
+						print('  restarting line search')
+						
 					self.restart()
 					return self.run(m_new, g_new, p_new, f)
 
