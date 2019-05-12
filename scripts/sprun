@@ -46,9 +46,10 @@ def get_config():
 	parser = ArgumentParser()
 	parser.add_argument('--workdir', nargs='?', default=getcwd())
 	parser.add_argument('--config_file', nargs='?', default='config.ini')
+	parser.add_argument('--add_path', nargs='?', default='no')
 	args = parser.parse_args()
-
-	return parse_config(args.workdir, args.config_file)
+	config, workdir = parse_config(args.workdir, args.config_file)
+	return config, workdir, args.add_path
 
 		
 def setup(config, workdir):
@@ -89,4 +90,5 @@ def setup(config, workdir):
 
 
 if __name__ == '__main__':
-	setup(*get_config())
+	workdir, config_file, _ = get_config()
+	setup(workdir, config_file)

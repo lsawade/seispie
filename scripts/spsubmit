@@ -9,7 +9,7 @@ if __name__ == '__main__':
 	cwd = os.path.dirname(os.path.realpath(__file__))
 	sprun = SourceFileLoader('get_config', cwd + '/sprun').load_module()
 	get_config = getattr(sprun, 'get_config')
-	config, workdir = get_config()
+	config, workdir, add_path = get_config()
 
 	# directory
 	slurm = config['slurm']
@@ -37,6 +37,9 @@ if __name__ == '__main__':
 		cmd += slurm['command'] + '\n'
 
 	# load modules and run
+	if add_path == 'yes':
+		cmd += 'export PYTHONPATH=$PYTHONPATH:' + os.getcwd() + '\n'
+	
 	cmd += 'module load %s \n' % slurm['modules']
 	cmd += 'srun python ' + cwd + '/sprun'
 
