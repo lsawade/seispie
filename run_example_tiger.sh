@@ -1,3 +1,3 @@
 #!/bin/sh
 
-sh run_example.sh --tiger
+sh run_example.sh $1 --tiger

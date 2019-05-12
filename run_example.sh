@@ -43,7 +43,7 @@ rm -rf output*
 rm -rf scratch
 
 export PYTHONPATH=$sproot
-if [[ $1 == "--tiger" ]]; then
+if [[ $2 == "--tiger" ]]; then
   python $sproot"/scripts/spsubmit" --workdir=$PWD --add_path=yes
 else
   python $sproot"/scripts/sprun" --workdir=$PWD
