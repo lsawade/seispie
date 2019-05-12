@@ -29,10 +29,11 @@ class lbfgs(cg):
 		self.lbfgs_s.insert(0, self.m_new - self.m_old)
 		self.lbfgs_y.insert(0, self.g_new - self.g_old)
 
-		nused = len(self.lbfgs_s)
-		if nused > self.lbfgs_mem:
+		if len(self.lbfgs_s) > self.lbfgs_mem:
 			self.lbfgs_s.pop()
 			self.lbfgs_y.pop()
+
+		nused = len(self.lbfgs_s)
 
 		rh = np.zeros(nused)
 		al = np.zeros(nused)
