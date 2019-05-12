@@ -39,11 +39,6 @@ def parse_config(workdir, config_file):
 								config[section][key] = parent[section][key]
 
 
-	# ensure output directory exists
-	outdir = path.join(workdir, config['path']['output'])
-	if not path.exists(outdir):
-		makedirs(outdir)
-
 	return config, workdir
 	
 def get_config():
@@ -62,6 +57,10 @@ def setup(config, workdir):
 	for dir in config['path']:
 		if config['path'][dir] != 'no':
 			path_dict[dir] = path.join(workdir, config['path'][dir])
+	
+	# ensure output directory exists
+	if not path.exists(path_dict['output']):
+		makedirs(path_dict['output'])
 
 	# import mpi
 	mpi = None

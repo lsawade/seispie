@@ -600,11 +600,11 @@ class fdm(base):
 			nt = self.nt
 			
 			tracedir = self.path['output'] + '/traces'
-			if not path.exists(tracedir):
-				makedirs(tracedir)
 			
-			if not self.mpi:
+			if not self.mpi or self.mpi.rank() == 0:
 				print('Generating traces')
+				if not path.exists(tracedir):
+					makedirs(tracedir)
 			
 			start = time()
 			for i in range(nsrc):
@@ -612,7 +612,9 @@ class fdm(base):
 					if self.mpi.rank() != i:
 						continue
 
-				print('  task %02d / %02d' % (i+1, nsrc))
+				if not self.mpi:
+					print('  task %02d / %02d' % (i+1, nsrc))
+
 				self.taskid = i
 				self.run_forward()
 
@@ -644,18 +646,21 @@ class fdm(base):
 
 	def compute_gradient(self):
 		misfit, kernel, model =  self.run_kernel(1)
-		output1 = np.zeros(self.nx * self.nz, dtype='float32')
-		output2 = np.zeros(self.nx * self.nz, dtype='float32')
-		kernel.copy_to_host(output1, stream=self.stream)
-		model.copy_to_host(output2, stream=self.stream)
+		npt = self.nx * self.nz
+		out_k = np.zeros(npt, dtype='float32')
+		out_m = np.zeros(npt, dtype='float32')
+		kernel.copy_to_host(out_k, stream=self.stream)
+		model.copy_to_host(out_m, stream=self.stream)
 		self.stream.synchronize()
-		return misfit, output1, output2
+
+		return out_k, misfit, out_m
 
 	def run_kernel(self, adj):
-		if adj:
-			print('Computing kernels')
-		else:
-			print('Computing misfit')
+		if not self.mpi or self.mpi.rank() == 0:
+			if adj:
+				print('Computing kernels')
+			else:
+				print('Computing misfit')
 
 		stream = self.stream
 		nsrc = self.nsrc
@@ -671,24 +676,51 @@ class fdm(base):
 		misfit=0
 		
 		for i in range(nsrc):
-			print('  task %02d / %02d' % (i+1, nsrc))
+			if self.mpi and self.mpi.rank() != i:
+				continue
+			
+			if not self.mpi:
+				print('  task %02d / %02d' % (i+1, nsrc))
+			
 			self.taskid = i
 			self.run_forward()
+
+			j = 0 if self.mpi else i
+
 			if sh:
-				misfit += self._compute_misfit('y', self.syn_y[i])
+				misfit += self._compute_misfit('y', self.syn_y[j])
 				if adj:
 					self.run_adjoint()
 
 			if psv:
-				misfit += self._compute_misfit('x', self.syn_x[i])
-				misfit += self._compute_misfit('z', self.syn_z[i])
+				misfit += self._compute_misfit('x', self.syn_x[j])
+				misfit += self._compute_misfit('z', self.syn_z[j])
 				if adj:
 					self.run_adjoint()
+
+		if self.mpi:
+			gradient = np.zeros(self.nx*self.nz,dtype='float32')
+			self.k_mu.copy_to_host(gradient,stream=stream)
+			stream.synchronize()
+
+			rank = self.mpi.rank()
+			if rank > 0:
+				fname = self.path['output'] + '/tmp/mu_' + str(rank) + '.npy'
+				gradient.tofile(fname)
+
+			self.mpi.sync()
+			if self.mpi.rank() == 0:
+				for i in range(1, self.nsrc):
+					fname = self.path['output'] + '/tmp/mu_' + str(i) + '.npy'
+					gradient += np.fromfile(fname, dtype='float32')
+
+				self.k_mu = cuda.to_device(gradient, stream=stream)
 
 		if adj:
 			self.smooth(self.k_mu)
 
-		print('  misfit = %.2f' % misfit)
+		if not self.mpi:
+			print('  misfit = %.2f' % misfit)
 
 		if adj:
 			return misfit, self.k_mu, self.mu

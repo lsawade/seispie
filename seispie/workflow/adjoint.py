@@ -20,20 +20,14 @@ class adjoint(base):
 		solver.import_stations()
 		solver.import_traces()
 
-		if self.mpi:
-			self.mpi.sync()
-			print('done')
-
-		# start = time()
-		# solver.import_model(0)
-		# solver.run_kernel(1)
-		# print('')
-		# print('Elapsed time: %.2fs' % (time() - start))
-
-		# out = np.zeros(solver.nx*solver.nz, dtype='float32')
-		# solver.k_mu.copy_to_host(out, stream=solver.stream)
-		# solver.stream.synchronize()
-		# solver.export_field(out, 'kmu')
+		start = time()
+		solver.import_model(0)
+		gradient, _, _ = solver.compute_gradient()
+		
+		if not self.mpi or self.mpi.rank() == 0:
+			print('')
+			print('Elapsed time: %.2fs' % (time() - start))
+			solver.export_field(gradient, 'kmu')
 
 	@property
 	def modules(self):

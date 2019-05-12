@@ -23,7 +23,7 @@ class base:
 
 		for i in range(niter):
 			print('Iteration %d' % (i+1))
-			misfit, self.g_new, self.m_new = solver.compute_gradient()
+			self.g_new, misfit, self.m_new = solver.compute_gradient()
 			
 			if i > 0:
 				solver.export_field(self.m_new, 'mu', i-1)

@@ -16,6 +16,13 @@ if __name__ == '__main__':
 	path = config['path']
 	outdir = workdir + '/' + path['output']
 
+	# ensure output directory exists
+	if not os.path.exists(outdir):
+		os.makedirs(outdir)
+
+	if not os.path.exists(outdir + '/tmp'):
+		os.makedirs(outdir + '/tmp')
+
 	# slurm commands
 	cmd = '#!/bin/bash\n'
 	cmd += '#SBATCH --job-name=%s\n' % slurm['name']
