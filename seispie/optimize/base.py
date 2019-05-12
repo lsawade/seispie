@@ -21,16 +21,22 @@ class base:
 
 		misfits = []
 
+		head = 1
+		if self.mpi and self.mpi.rank():
+			head = 0
+
 		for i in range(niter):
-			print('Iteration %d' % (i+1))
+			if head:
+				print('Iteration %d' % (i+1))
+			
 			self.g_new, misfit, self.m_new = solver.compute_gradient()
 			
-			if i > 0:
-				solver.export_field(self.m_new, 'mu', i-1)
-			else:
-				ref = misfit
-
-			misfits.append(misfit / ref)
+			if head:
+				if i > 0:
+					solver.export_field(self.m_new, 'mu', i-1)
+				else:
+					ref = misfit
+				misfits.append(misfit / ref)
 			
 			self.p_new = self.compute_direction()
 			self.m_old = self.m_new
@@ -42,18 +48,20 @@ class base:
 				break
 
 		misfit = solver.compute_misfit()
-		misfits.append(misfit / ref)
-		m_new = np.zeros(solver.nx * solver.nz, dtype='float32')
-		solver.mu.copy_to_host(m_new, solver.stream)
-		solver.stream.synchronize()
-		solver.export_field(m_new, 'mu', niter)
 
-		print('')
-		print('Misfits:')
-		for misfit in misfits:
-			print('  %.2f' % misfit)
+		if head:
+			misfits.append(misfit / ref)
+			m_new = np.zeros(solver.nx * solver.nz, dtype='float32')
+			solver.mu.copy_to_host(m_new, solver.stream)
+			solver.stream.synchronize()
+			solver.export_field(m_new, 'mu', niter)
 
-		print('')
-		print('Elapsed time: %.2f' % (time() - start))
+			print('')
+			print('Misfits:')
+			for misfit in misfits:
+				print('  %.2f' % misfit)
+
+			print('')
+			print('Elapsed time: %.2f' % (time() - start))
 
 	

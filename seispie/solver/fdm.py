@@ -699,26 +699,24 @@ class fdm(base):
 					self.run_adjoint()
 
 		if self.mpi:
-			mf_sum = np.array(1, dtype='float32')
+			mf_sum = np.zeros(1, dtype='float32')
 			self.mpi.sum(misfit.astype('float32'), mf_sum)
-			misfit = mf_sum
+			misfit = mf_sum[0]
 			
 			gradient = np.zeros(self.nx*self.nz,dtype='float32')
 			self.k_mu.copy_to_host(gradient,stream=stream)
 			stream.synchronize()
 
 			rank = self.mpi.rank()
-			if rank > 0:
-				fname = self.path['output'] + '/tmp/mu_' + str(rank) + '.npy'
-				gradient.tofile(fname)
+			fname = self.path['output'] + '/tmp/mu_' + str(rank) + '.npy'
+			gradient.tofile(fname)
 
 			self.mpi.sync()
-			if self.mpi.rank() == 0:
-				for i in range(1, self.nsrc):
-					fname = self.path['output'] + '/tmp/mu_' + str(i) + '.npy'
-					gradient += np.fromfile(fname, dtype='float32')
+			for i in range(self.nsrc):
+				fname = self.path['output'] + '/tmp/mu_' + str(i) + '.npy'
+				gradient += np.fromfile(fname, dtype='float32')
 
-				self.k_mu = cuda.to_device(gradient, stream=stream)
+			self.k_mu = cuda.to_device(gradient, stream=stream)
 
 		if adj:
 			self.smooth(self.k_mu)
