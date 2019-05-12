@@ -656,7 +656,7 @@ class fdm(base):
 		return out_k, misfit, out_m
 
 	def run_kernel(self, adj):
-		if not self.mpi or self.mpi.rank() == 0:
+		if not self.mpi:
 			if adj:
 				print('Computing kernels')
 			else:

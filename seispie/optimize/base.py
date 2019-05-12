@@ -48,6 +48,9 @@ class base:
 					print('Line search failed')
 					break
 
+			if head:
+				print('')
+
 		misfit = solver.compute_misfit()
 
 		if head:
@@ -57,10 +60,9 @@ class base:
 			solver.stream.synchronize()
 			solver.export_field(m_new, 'mu', niter)
 
-			print('')
 			print('Misfits:')
 			for misfit in misfits:
-				print('  %.2f' % misfit)
+				print('  %.4f' % misfit)
 
 			print('')
 			print('Elapsed time: %.2fs' % (time() - start))
