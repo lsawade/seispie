@@ -11,4 +11,4 @@ class mpi:
 		MPI.COMM_WORLD.Barrier()
 
 	def sum(self, data, out):
-		MPI.COMM_WORLD.Reduce(data, out, op=MPI.SUM, root=0)
+		MPI.COMM_WORLD.Allreduce(data, out, op=MPI.SUM)

@@ -699,6 +699,10 @@ class fdm(base):
 					self.run_adjoint()
 
 		if self.mpi:
+			mf_sum = np.array(1, dtype='float32')
+			self.mpi.sum(misfit.astype('float32'), mf_sum)
+			misfit = mf_sum
+			
 			gradient = np.zeros(self.nx*self.nz,dtype='float32')
 			self.k_mu.copy_to_host(gradient,stream=stream)
 			stream.synchronize()
