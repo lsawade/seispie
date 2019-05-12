@@ -15,7 +15,7 @@ class cg(base):
 		return self.bracket.run(self.m_new, self.g_new, self.p_new, misfit)
 
 	def restart_search(self):
-		self.line_search.restart()
+		self.bracket.restart()
 
 	def pollak(self, g_new, g_old):
 		num = np.dot(g_new, g_new - g_old)

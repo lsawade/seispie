@@ -39,6 +39,7 @@ class base:
 				misfits.append(misfit / ref)
 			
 			self.p_new = self.compute_direction()
+			
 			self.m_old = self.m_new
 			self.p_old = self.p_new
 			self.g_old = self.g_new
