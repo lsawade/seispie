@@ -18,3 +18,15 @@ Running examples on TigerGPU:
 ````
 sh submit_example.sh
 ````
+
+Run custom projects:
+1. Add seispie to PATH
+````
+export PATH=$PATH:/path/to/seispie/scripts
+export PYTHONPATH=$PYTHONPATH:/path/to/seispie
+````
+2. Enter project directory and run
+````
+cd /path/to/project
+sprun
+````
