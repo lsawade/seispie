@@ -138,7 +138,7 @@ if __name__ == '__main__':
     for database_file in files:
         # component name
         comp = get_title(database_file)
-        if len(sys.argv) >= 3 and comp != sys.argv[2]:
+        if len(sys.argv) >= 3 and sys.argv[2] not in database_file:
             continue
 
         # read database file
