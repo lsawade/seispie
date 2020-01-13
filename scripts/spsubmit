@@ -40,7 +40,7 @@ if __name__ == '__main__':
 	if add_path == 'yes':
 		cmd += 'export PYTHONPATH=$PYTHONPATH:' + os.getcwd() + '\n'
 	
-	cmd += 'module load %s\n. "/home/ccui/anaconda3/etc/profile.d/conda.sh"\nconda activate numba\n' % slurm['modules']
+	cmd += 'module load %s \n' % slurm['modules']
 	cmd += 'srun python ' + cwd + '/sprun'
 
 	# add arguments to submission script
