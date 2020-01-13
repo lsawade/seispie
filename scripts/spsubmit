@@ -40,8 +40,8 @@ if __name__ == '__main__':
 	if add_path == 'yes':
 		cmd += 'export PYTHONPATH=$PYTHONPATH:' + os.getcwd() + '\n'
 	
-	cmd += 'module load %s \nconda activate obspy\n' % slurm['modules']
-	cmd += 'srun -n 24 python ' + cwd + '/sprun'
+	cmd += 'module load %s \n' % slurm['modules']
+	cmd += 'srun python ' + cwd + '/sprun'
 
 	# add arguments to submission script
 	for i in range(1, len(sys.argv)):
