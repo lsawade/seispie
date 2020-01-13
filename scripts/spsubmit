@@ -40,8 +40,8 @@ if __name__ == '__main__':
 	if add_path == 'yes':
 		cmd += 'export PYTHONPATH=$PYTHONPATH:' + os.getcwd() + '\n'
 	
-	cmd += 'module load %s \nconda activate numba\n' % slurm['modules']
-	cmd += 'mpirun -N ' + str(int(slurm['nodes']) * int(slurm['tasks_per_node'])) + ' python ' + cwd + '/sprun'
+	cmd += 'module load %s\n. "/home/ccui/anaconda3/etc/profile.d/conda.sh"\nconda activate numba\n' % slurm['modules']
+	cmd += 'srun -G 1 python ' + cwd + '/sprun'
 
 	# add arguments to submission script
 	for i in range(1, len(sys.argv)):
