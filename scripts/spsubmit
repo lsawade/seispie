@@ -41,7 +41,7 @@ if __name__ == '__main__':
 		cmd += 'export PYTHONPATH=$PYTHONPATH:' + os.getcwd() + '\n'
 	
 	cmd += 'module load %s \n' % slurm['modules']
-	cmd += 'mpirun -n ' + str(int(slurm['nodes']) * int(slurm['tasks_per_node'])) + ' python ' + cwd + '/sprun'
+	cmd += 'srun python ' + cwd + '/sprun'
 
 	# add arguments to submission script
 	for i in range(1, len(sys.argv)):
