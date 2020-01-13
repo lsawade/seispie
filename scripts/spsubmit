@@ -30,7 +30,7 @@ if __name__ == '__main__':
 	cmd += '#SBATCH --ntasks-per-node=%s\n' % slurm['tasks_per_node']
 	cmd += '#SBATCH --nodes=%s\n' % slurm['nodes']
 	cmd += '#SBATCH --time=%s\n' % slurm['time']
-	cmd += '#SBATCH --gres=gpu:1\n'
+	cmd += '#SBATCH --gres=gpu:4\n'
 
 	# custom command
 	if 'command' in slurm:
