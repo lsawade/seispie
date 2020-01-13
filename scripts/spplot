@@ -73,6 +73,7 @@ def exist_files(names):
 
 
 def get_coord_files(dir):
+    print(dir)
     for files in [
         [abspath(join(dir, subdir, 'proc000000_x.bin')),
          abspath(join(dir, subdir, 'proc000000_z.bin'))]
