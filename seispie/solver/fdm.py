@@ -294,6 +294,7 @@ class fdm(base):
 		"""
 		model = dict()
 		model_dir = self.path['model_true'] if model_true else self.path['model_init']
+		print(model_dir)
 
 		for name in ['x', 'z', 'vp', 'vs', 'rho']:
 			filename = path.join(model_dir, 'proc000000_' + name + '.bin')
