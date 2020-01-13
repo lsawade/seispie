@@ -10,7 +10,6 @@ from configparser import ConfigParser
 def parse_config(workdir, config_file):
 	# assertions
 	config_path = path.join(workdir, config_file)
-	print(workdir)
 	assert path.exists(workdir)
 	assert path.exists(config_path)
 
