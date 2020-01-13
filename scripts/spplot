@@ -87,6 +87,7 @@ def get_coord_files(_dir):
          '../../../output/model_init',
          '../../../../output/model_init',
          ]]:
+        print(files)
         if exist_files(files):
             return files
     else:
