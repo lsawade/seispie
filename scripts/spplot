@@ -72,10 +72,10 @@ def exist_files(names):
         return True
 
 
-def get_coord_files(_dir):
+def get_coord_files(dir):
     for files in [
-        [abspath(join(_dir, subdir, 'proc000000_x.bin')),
-         abspath(join(_dir, subdir, 'proc000000_z.bin'))]
+        [abspath(join(dir, subdir, 'proc000000_x.bin')),
+         abspath(join(dir, subdir, 'proc000000_z.bin'))]
          for subdir in [
          '.',
          '../model_init',
@@ -87,7 +87,6 @@ def get_coord_files(_dir):
          '../../../output/model_init',
          '../../../../output/model_init',
          ]]:
-        print(files)
         if exist_files(files):
             return files
     else:
