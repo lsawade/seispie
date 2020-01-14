@@ -38,7 +38,7 @@ class cg(base):
 		g_old = self.g_old
 		p_old = self.p_old
 
-		beta = self.fletcher(g_new, g_old)
+		beta = self.pollak(g_new, g_old)
 		p_new = -g_new + beta * p_old
 
 		if np.dot(p_new, g_new) > 0:
