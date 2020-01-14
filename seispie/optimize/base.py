@@ -36,7 +36,6 @@ class base:
 					solver.export_field(self.m_new, 'mu', i-1)
 				else:
 					ref = misfit
-					print(ref)
 				misfits.append(misfit / ref)
 			
 			self.p_new = self.compute_direction()
