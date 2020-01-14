@@ -22,6 +22,12 @@ class cg(base):
 		den = np.dot(g_old, g_old)
 		beta = num / den
 		return beta
+	
+	def fletcher(self, g_new, g_old):
+		num = np.dot(g_new, g_new)
+		den = np.dot(g_old, g_old)
+		beta = num / den
+		return beta
 
 	def compute_direction(self):
 		g_new = self.g_new
@@ -32,7 +38,7 @@ class cg(base):
 		g_old = self.g_old
 		p_old = self.p_old
 
-		beta = self.pollak(g_new, g_old)
+		beta = self.fletcher(g_new, g_old)
 		p_new = -g_new + beta * p_old
 
 		if np.dot(p_new, g_new) > 0:
