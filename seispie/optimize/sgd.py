@@ -1,3 +1,5 @@
+from time import time
+import numpy as np
 from seispie.optimize.gd import gd
 
 class sgd(gd):
