@@ -6,3 +6,4 @@ paths*c
 
 output*
 scratch
+.mypy_cache
