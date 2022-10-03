@@ -159,13 +159,13 @@ def div_vxz(dvxdx, dvxdz, dvzdx, dvzdz, vx, vz, dx, dz, nx, nz):
 			dvzdx[k] = 9 * (vz[k+nz] - vz[k]) / (8 * dx) - (vz[k+2*nz] - vz[k-nz]) / (24 * dx)
 		else:
 			dvxdx[k] = 0
-			dvzdx[k] = 0		
+			dvzdx[k] = 0
 		if j >= 1 and j < nz - 2:
 			dvxdz[k] = 9 * (vx[k+1] - vx[k]) / (8 * dz) - (vx[k+2] - vx[k-1]) / (24 * dz)
 			dvzdz[k] = 9 * (vz[k+1] - vz[k]) / (8 * dz) - (vz[k+2] - vz[k-1]) / (24 * dz)
 		else:
 			dvxdz[k] = 0
-			dvzdz[k] = 0	
+			dvzdz[k] = 0
 
 @cuda.jit('void(float32[:], float32[:], float32[:], float32[:], float32[:], float32, int32)')
 def add_sy(sxy, szy, dvydx, dvydz, mu, dt, npt):
@@ -206,11 +206,11 @@ def init_gausian(gsum, sigma, nx, nz):
 		sumx = 0
 		for n in range(nx):
 			sumx += gaussian(i - n, sigma)
-		
+
 		sumz = 0
 		for n in range(nz):
 			sumz += gaussian(j - n, sigma)
-		
+
 		gsum[k] = sumx * sumz
 
 @cuda.jit
@@ -337,7 +337,7 @@ class fdm(base):
 			self.bound, int(self.config['abs_width']), float(self.config['abs_alpha']),
 			abs_left, abs_right, abs_bottom, abs_top, nx, nz
 		)
-		
+
 		dats = []
 
 		if self.sh:
@@ -345,7 +345,7 @@ class fdm(base):
 
 		if self.psv:
 			dats += [
-				'vx', 'vz', 'ux',' uz', 'sxx', 'szz', 'sxz',
+				'vx', 'vz', 'ux', 'uz', 'sxx', 'szz', 'sxz',
 				'dsx', 'dsz','dvxdx', 'dvxdz', 'dvzdx', 'dvzdz'
 			]
 
@@ -425,7 +425,7 @@ class fdm(base):
 		clear_field[dim](self.k_lam)
 		clear_field[dim](self.k_mu)
 		clear_field[dim](self.k_rho)
-			
+
 	def clear_wavefields(self):
 		dim = self.dim
 
@@ -434,7 +434,7 @@ class fdm(base):
 			clear_field[dim](self.uy)
 			clear_field[dim](self.sxy)
 			clear_field[dim](self.szy)
-		
+
 		if self.psv:
 			clear_field[dim](self.vx)
 			clear_field[dim](self.vz)
@@ -443,7 +443,7 @@ class fdm(base):
 			clear_field[dim](self.sxx)
 			clear_field[dim](self.szz)
 			clear_field[dim](self.sxz)
-		
+
 	def run_forward(self):
 		stream = self.stream
 		dim = self.dim
@@ -494,7 +494,7 @@ class fdm(base):
 			if psv:
 				div_sxz[dim](self.dsx, self.dsz, self.sxx, self.szz, self.sxz, dx, dz, nx, nz)
 				stf_dsxz[self.nsrc, 1](self.dsx, self.dsz, self.stf_x, self.stf_z, self.src_id, isrc, it, nt)
-				add_vxz[dim](self.vx, self.vz, self.ux, self.uz, self.dsx, self.dsz, rho, bound, dt)
+				add_vxz[dim](self.vx, self.vz, self.ux, self.uz, self.dsx, self.dsz, self.rho, self.bound, dt)
 				div_vxz[dim](self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.vx, self.vz, dx, dz, nx, nz)
 				add_sxz[dim](self.sxx, self.szz, self.sxz, self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.lam, self.mu, dt)
 				save_obs[self.nrec, 1](self.obs_x, self.ux, self.rec_id, it, nt, nx, nz)
@@ -503,7 +503,7 @@ class fdm(base):
 			if isa >= 0:
 				if sh:
 					self.vy.copy_to_host(self.vy_fwd[isa], stream=stream)
-					
+
 				if psv:
 					self.vx.copy_to_host(self.vx_fwd[isa], stream=stream)
 					self.vz.copy_to_host(self.vz_fwd[isa], stream=stream)
@@ -564,7 +564,7 @@ class fdm(base):
 				add_sxz[dim](self.sxx, self.szz, self.sxz, self.dvxdx, self.dvxdz, self.dvzdx, self.dvzdz, self.lam, self.mu, dt)
 				save_obs[self.nrec, 1](self.obs_x, self.ux, self.rec_id, it, nt, nx, nz)
 				save_obs[self.nrec, 1](self.obs_z, self.uz, self.rec_id, it, nt, nx, nz)
-		
+
 	def smooth(self, data):
 		dim = self.dim
 		apply_gauxxian_x[dim](data, self.gtmp, self.sigma, self.nx, self.nz)
@@ -586,7 +586,7 @@ class fdm(base):
 				if self.mpi:
 					if self.mpi.rank() != i:
 						continue
-				
+
 				if sh:
 					syn_y.append(np.fromfile('%s/vy_%06d.npy' % (tracedir, i), dtype='float32'))
 
@@ -598,14 +598,14 @@ class fdm(base):
 			stream = self.stream
 			nrec = self.nrec
 			nt = self.nt
-			
+
 			tracedir = self.path['output'] + '/traces'
-			
+
 			if not self.mpi or self.mpi.rank() == 0:
 				print('Generating traces')
 				if not path.exists(tracedir):
 					makedirs(tracedir)
-			
+
 			start = time()
 			for i in range(nsrc):
 				if self.mpi:
@@ -629,7 +629,7 @@ class fdm(base):
 					self.obs_x.copy_to_host(out, stream=stream)
 					syn_x.append(out)
 					out.tofile('%s/vx_%06d.npy' % (tracedir, i))
-					
+
 					out = np.zeros(nt * nrec, dtype='float32')
 					self.obs_z.copy_to_host(out, stream=stream)
 					syn_z.append(out)
@@ -666,7 +666,7 @@ class fdm(base):
 		nsrc = self.nsrc
 		nrec = self.nrec
 		nt = self.nt
-		
+
 		sh = self.sh
 		psv = self.psv
 
@@ -674,14 +674,14 @@ class fdm(base):
 		self.clear_kernels()
 
 		misfit=0
-		
+
 		for i in range(nsrc):
 			if self.mpi and self.mpi.rank() != i:
 				continue
-			
+
 			if not self.mpi:
 				print('  task %02d / %02d' % (i+1, nsrc))
-			
+
 			self.taskid = i
 			self.run_forward()
 
@@ -702,7 +702,7 @@ class fdm(base):
 			mf_sum = np.zeros(1, dtype='float32')
 			self.mpi.sum(misfit.astype('float32'), mf_sum)
 			misfit = mf_sum[0]
-			
+
 			gradient = np.zeros(self.nx*self.nz,dtype='float32')
 			self.k_mu.copy_to_host(gradient,stream=stream)
 			stream.synchronize()
