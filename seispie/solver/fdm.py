@@ -535,7 +535,7 @@ class fdm(base):
 		dz = self.dz
 		dt = self.dt
 
-		npt = self.npt
+		npt = self.npt[0]
 		sae = self.sae
 
 		self.clear_wavefields()
