@@ -462,7 +462,7 @@ class fdm(base):
 		else:
 			isrc = self.taskid
 
-		npt = self.npt
+		npt = self.npt[0]
 		out = np.zeros(npt, dtype='float32')
 		sfe = int(self.config['save_snapshot'])
 		sae = self.sae
